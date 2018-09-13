@@ -8,7 +8,8 @@ import Data.Array (some, (:))
 import Data.Either (Either, either)
 import Data.Foldable (null, product, sum)
 import Data.Maybe (Maybe(..))
-import Data.String (fromCharArray, trim)
+import Data.String (trim)
+import Data.String.CodeUnits (fromCharArray)
 import Data.String.Regex (replace)
 import Data.String.Regex.Flags (global, multiline)
 import Data.String.Regex.Unsafe (unsafeRegex)
@@ -107,7 +108,7 @@ preProcess = replace (unsafeRegex "(\\s)\\s*" $ global <> multiline) "$1"
          >>> trim
 
 parseOrEmpty :: String -> Lang
-parseOrEmpty = either (const Empty) id <<< tryParse
+parseOrEmpty = either (const Empty) identity <<< tryParse
 
 testLangString :: String
 testLangString = """
