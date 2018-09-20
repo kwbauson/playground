@@ -142,6 +142,9 @@ step env@(Env e lang) = case lang of
     Union _ _ -> Result env
     _ -> Error "not implemented" env
 
+descend :: Lang -> Env -> Result
+descend l (Env e l') = step $ Env e (Quot l l')
+
 stepN :: Int -> Env -> Result
 stepN 0 e = Result e
 stepN i e = case step e of
