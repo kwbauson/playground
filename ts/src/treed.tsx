@@ -1,15 +1,102 @@
-import React from 'react'
+import React, { CSSProperties } from 'react'
+import { observable, action } from 'mobx'
+import { observer } from 'mobx-react'
 import shortid from 'shortid'
 
-type Tree<T> = {
-  label: T
-  children: Tree<T>[]
-  key: string
+type AST<T extends keyof G, G extends Grammar<G>> = {
+  type: T
+  selected: boolean
+} & (G[T] extends { children: GrammarChildren<G>; value: any }
+  ? { children: ASTChildren<T, G>; value: G[T]['value'] }
+  : G[T] extends { children: GrammarChildren<G> }
+    ? { children: ASTChildren<T, G> }
+    : G[T] extends { value: any } ? { value: G[T]['value'] } : {})
+
+type ASTChildren<T extends keyof G, G extends Grammar<G>> = G[T] extends {
+  children: GrammarChildren<G>
+}
+  ? { [C in keyof G[T]['children']]: AST<G[T]['children'][C], G> }
+  : {}
+
+type Grammar<G> = {
+  [K in keyof G]: { children?: GrammarChildren<G>; value?: any }
+  // | { children: GrammarChildren<G> }
+  // | { value: any }
+  // | {}
 }
 
+type GrammarChildren<G> = (keyof G)[] | { [key: string]: keyof G }
+
+type Handler<G extends Grammar<G>> = {
+  [T in keyof G]: {
+    view: G[T] extends { children: any }
+      ? (x: AST<T, G>, children: Display[]) => Display
+      : (x: AST<T, G>) => Display
+    actions?: {
+      [name: string]: {
+        key?: string
+        call: (x: AST<T, G>) => void
+      }
+    }
+  }
+}
+
+function astView<S extends keyof G, G extends Grammar<G>>(
+  handler: Handler<G>,
+  tree: AST<S, G>,
+): Display {
+  return <></>
+}
+
+const view = astView<
+  'root',
+  {
+    // root: { value: string }
+    root: { children: ['text'] }
+    text: { children: 'line'[] }
+    line: { children: 'char'[] }
+    char: { value: string }
+  }
+>(
+  {
+    // root: {
+    //   view: x => <>{x.value}</>,
+    // },
+    root: {
+      view: (x, children) => <div>{children}</div>,
+    },
+    text: {
+      view: (x, children) => <div>{children}</div>,
+    },
+    line: {
+      view: (x, children) => <div>{children}</div>,
+    },
+    char: {
+      view: x => <span>{x.value}</span>,
+    },
+  },
+  {
+    type: 'root',
+    children: [
+      {
+        type: 'text',
+        children: [],
+      },
+    ],
+  },
+)
+
+type Tree<T extends ViewType = ViewType> = {
+  key: string
+  label: Label<T>
+  children: Tree[]
+  parent?: Tree
+}
+
+type ViewType = keyof ViewTypes
 interface ViewTypes {}
 
-interface Label<T extends keyof ViewTypes = keyof ViewTypes> {
+interface Label<T extends ViewType = ViewType> {
   type: T
   value: ViewTypes[T]
   selected: boolean
@@ -18,12 +105,12 @@ interface Label<T extends keyof ViewTypes = keyof ViewTypes> {
 
 type Display = JSX.Element
 
-interface ViewProps<T extends keyof ViewTypes> {
+interface ViewProps<T extends ViewType> {
   label: Label<T>
   children: Display[]
 }
 
-interface View<T extends keyof ViewTypes = keyof ViewTypes> {
+interface View<T extends ViewType = ViewType> {
   type: T
   (props: ViewProps<T>): Display
 }
@@ -32,10 +119,9 @@ interface ViewTypes {
   text: string
   line: string
   char: string
-  bool: boolean
 }
 
-function mkView<T extends keyof ViewTypes>(
+function mkView<T extends ViewType>(
   type: T,
   f: (props: ViewProps<T>) => Display,
 ): View<T> {
@@ -44,15 +130,60 @@ function mkView<T extends keyof ViewTypes>(
   return view
 }
 
-const textView = mkView('text', ({ children }) => <div>{children}</div>)
+function getSelected(tree: Tree): Tree[] {
+  const selectedChildren = tree.children
+    .map(getSelected)
+    .reduce((a, x) => a.concat(x), [])
+  if (tree.label.selected) {
+    return [tree, ...selectedChildren]
+  } else {
+    return selectedChildren
+  }
+}
 
-const lineView = mkView('line', ({ children }) => <div>{children}</div>)
+function setParents(tree: Tree, parent?: Tree): void {
+  tree.parent = parent
+  tree.children.forEach(x => setParents(x, tree))
+}
 
-const charView = mkView('char', ({ label }) => <span>{label.value}</span>)
+function selectFirstChild(tree: Tree): void {
+  if (tree.children.length > 0) {
+    tree.label.selected = false
+    tree.children[0].label.selected = true
+  }
+}
 
-function textTree(text: string): Tree<Label> {
+function selectParent(tree: Tree): void {
+  if (tree.parent) {
+    tree.label.selected = false
+    tree.parent.label.selected = true
+  }
+}
+
+function selectPreviousSibling(tree: Tree): void {
+  if (tree.parent) {
+    const idx = tree.parent.children.findIndex(x => x === tree)!
+    if (idx > 0) {
+      tree.label.selected = false
+      tree.parent.children[idx - 1].label.selected = true
+    }
+  }
+}
+
+function selectNextSibling(tree: Tree): void {
+  if (tree.parent) {
+    const idx = tree.parent.children.findIndex(x => x === tree)!
+    if (idx < tree.parent.children.length - 1) {
+      tree.label.selected = false
+      tree.parent.children[idx + 1].label.selected = true
+    }
+  }
+}
+
+function textTree(text: string): Tree<'text'> {
   const lines = text.split('\n')
   return {
+    key: shortid(),
     label: {
       type: 'text',
       value: text,
@@ -60,13 +191,13 @@ function textTree(text: string): Tree<Label> {
       expanded: true,
     },
     children: lines.map(textLineTree),
-    key: shortid(),
   }
 }
 
-function textLineTree(line: string): Tree<Label> {
+function textLineTree(line: string): Tree<'line'> {
   const chars = line.split('')
   return {
+    key: shortid(),
     label: {
       type: 'line',
       value: line,
@@ -74,12 +205,12 @@ function textLineTree(line: string): Tree<Label> {
       expanded: true,
     },
     children: chars.map(textCharTree),
-    key: shortid(),
   }
 }
 
-function textCharTree(char: string): Tree<Label> {
+function textCharTree(char: string): Tree<'char'> {
   return {
+    key: shortid(),
     label: {
       type: 'char',
       value: char,
@@ -87,12 +218,14 @@ function textCharTree(char: string): Tree<Label> {
       expanded: true,
     },
     children: [],
-    key: shortid(),
   }
 }
 
-function viewTree(views: View<any>[], tree: Tree<Label>): JSX.Element {
-  const view = views.find(x => x.type === tree.label.type)!
+function viewTree(
+  views: { [K in ViewType]: View<K> },
+  tree: Tree,
+): JSX.Element {
+  const view = views[tree.label.type] as View<ViewType>
   return view({
     label: tree.label,
     children: tree.children.map(x => (
@@ -101,5 +234,85 @@ function viewTree(views: View<any>[], tree: Tree<Label>): JSX.Element {
   })
 }
 
+function rootViewTree(
+  views: { [K in ViewType]: View<K> },
+  tree: Tree,
+): JSX.Element {
+  tree = observable(tree)
+  setParents(tree)
+  ;(window as any).tree = tree
+
+  let op: (f: (x: Tree) => void) => void = f => {
+    const selected = getSelected(tree)
+    selected.forEach(f)
+  }
+  op = action(op)
+
+  const View = observer(() => viewTree(views, tree))
+
+  @observer
+  class ViewContainer extends React.Component {
+    private ref: React.RefObject<HTMLDivElement>
+
+    constructor(props: {}) {
+      super(props)
+      this.ref = React.createRef()
+    }
+
+    componentDidMount() {
+      this.ref.current!.focus()
+    }
+
+    render() {
+      const selected = getSelected(tree)
+      return (
+        <div>
+          <div
+            style={{
+              padding: 50,
+            }}
+            ref={this.ref}
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'l') {
+                op(selectFirstChild)
+              } else if (e.key === 'h') {
+                op(selectParent)
+              } else if (e.key === 'j') {
+                op(selectNextSibling)
+              } else if (e.key === 'k') {
+                op(selectPreviousSibling)
+              }
+            }}
+          >
+            <View />
+          </div>
+          {selected.map(x => x.label.type)}
+        </div>
+      )
+    }
+  }
+  return <ViewContainer />
+}
+
+function selectedStyle(selected: boolean): CSSProperties {
+  return {
+    border: selected ? '1px solid black' : undefined,
+  }
+}
+
 export const App = () =>
-  viewTree([textView, lineView, charView], textTree('line 1\nline 2\nline 3'))
+  rootViewTree(
+    {
+      text: mkView('text', ({ label, children }) => (
+        <div style={selectedStyle(label.selected)}>{children}</div>
+      )),
+      line: mkView('line', ({ label, children }) => (
+        <div style={selectedStyle(label.selected)}>{children}</div>
+      )),
+      char: mkView('char', ({ label }) => (
+        <span style={{ ...selectedStyle(label.selected) }}>{label.value}</span>
+      )),
+    },
+    textTree('line 1\nline 2\nline 3'),
+  )
