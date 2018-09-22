@@ -3,37 +3,88 @@ import { observable, action } from 'mobx'
 import { observer } from 'mobx-react'
 import shortid from 'shortid'
 
-const Root = Symbol('Root')
+type AST<T extends keyof G, G extends Grammar<G>> = {
+  type: T
+  selected: boolean
+} & (G[T] extends { children: GrammarChildren<G>; value: any }
+  ? { children: ASTChildren<T, G>; value: G[T]['value'] }
+  : G[T] extends { children: GrammarChildren<G> }
+    ? { children: ASTChildren<T, G> }
+    : G[T] extends { value: any } ? { value: G[T]['value'] } : {})
 
-type ASTDesc<T> = {
-  [K in keyof T | typeof Root]: { type?: any; children?: (keyof T)[] }
+type ASTChildren<T extends keyof G, G extends Grammar<G>> = G[T] extends {
+  children: GrammarChildren<G>
+}
+  ? { [C in keyof G[T]['children']]: AST<G[T]['children'][C], G> }
+  : {}
+
+type Grammar<G> = {
+  [K in keyof G]: { children?: GrammarChildren<G>; value?: any }
+  // | { children: GrammarChildren<G> }
+  // | { value: any }
+  // | {}
 }
 
-type AST<T extends ASTDesc<T>> = {
-  label: T[typeof Root]['type']
-  children: ChildrenType<typeof Root, T>
-}
+type GrammarChildren<G> = (keyof G)[] | { [key: string]: keyof G }
 
-type ChildrenType<K extends keyof T, T extends ASTDesc<T>> = {
-  [C in keyof T[K]['children']]: {
-    label: T[K]['type']
+type Handler<G extends Grammar<G>> = {
+  [T in keyof G]: {
+    view: G[T] extends { children: any }
+      ? (x: AST<T, G>, children: Display[]) => Display
+      : (x: AST<T, G>) => Display
+    actions?: {
+      [name: string]: {
+        key?: string
+        call: (x: AST<T, G>) => void
+      }
+    }
   }
 }
 
-type T1<T> = { [K in keyof T]: K }
-type T2 = T1<[string]>
-
-type TestDesc = {
-  [Root]: { children: ['text'] }
-  text: { children: 'line'[] }
-  line: { children: 'char'[] }
-  char: { type: string }
+function astView<S extends keyof G, G extends Grammar<G>>(
+  handler: Handler<G>,
+  tree: AST<S, G>,
+): Display {
+  return <></>
 }
 
-type Test = AST<TestDesc>
-
-declare const foo: Test
-foo.children[0].label
+const view = astView<
+  'root',
+  {
+    // root: { value: string }
+    root: { children: ['text'] }
+    text: { children: 'line'[] }
+    line: { children: 'char'[] }
+    char: { value: string }
+  }
+>(
+  {
+    // root: {
+    //   view: x => <>{x.value}</>,
+    // },
+    root: {
+      view: (x, children) => <div>{children}</div>,
+    },
+    text: {
+      view: (x, children) => <div>{children}</div>,
+    },
+    line: {
+      view: (x, children) => <div>{children}</div>,
+    },
+    char: {
+      view: x => <span>{x.value}</span>,
+    },
+  },
+  {
+    type: 'root',
+    children: [
+      {
+        type: 'text',
+        children: [],
+      },
+    ],
+  },
+)
 
 type Tree<T extends ViewType = ViewType> = {
   key: string
