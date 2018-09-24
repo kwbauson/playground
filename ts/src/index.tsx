@@ -10,6 +10,6 @@ function renderRoot() {
 
 renderRoot()
 
-if (module.hot) {
-  module.hot.accept(renderRoot)
-}
+// if (module.hot) {
+//   module.hot.accept(renderRoot)
+// }
