@@ -1,12 +1,9 @@
-﻿using System;
-using Microsoft.AspNetCore;
+﻿using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using NJsonSchema;
-using NSwag.AspNetCore;
 
-namespace AutoApi
+namespace JDataApi
 {
     public class Program
     {
@@ -19,13 +16,12 @@ namespace AutoApi
             WebHost.CreateDefaultBuilder(args)
                 .ConfigureServices(services =>
                 {
-                    services.AddSwagger();
-                    services.AddAutoApi<Root>();
+                    services.AddSingleton<JDataService>();
+                    services.AddMvc();
                 })
                 .Configure(app =>
                 {
-                    app.UseSwaggerUi3WithApiExplorer();
-                    app.UseAutoApi();
+                    app.UseMvc();
                 });
     }
 }
