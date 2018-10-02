@@ -16,7 +16,7 @@ namespace JDataApi
             WebHost.CreateDefaultBuilder(args)
                 .ConfigureServices(services =>
                 {
-                    services.AddSingleton<JDataService>();
+                    services.AddTransient<JDataService>();
                     services.AddMvc();
                 })
                 .Configure(app =>

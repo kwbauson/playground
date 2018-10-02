@@ -39,7 +39,7 @@ namespace JDataApi
                     var index = Convert.ToInt32(key);
                     if (index >= 0 && index < array.Count)
                     {
-                        current = array[index];
+                        current = Resolve(array)[index];
                     }
                     else
                     {
@@ -48,7 +48,7 @@ namespace JDataApi
                 }
                 else
                 {
-                    current = current[key];
+                    current = Resolve(current)[key];
                 }
             }
             return current;
@@ -130,14 +130,39 @@ namespace JDataApi
             }
         }
 
+        public JToken Resolve(JToken value)
+        {
+            if (IsRef(value))
+            {
+                var path = value["$ref"]?.Value<string>();
+                return Get(path);
+            }
+            else
+            {
+                return value;
+            }
+        }
+
         private IEnumerable<string> GetPath(string path)
         {
-            return (path?.Split('/') ?? new string[] { }).Prepend("#");
+            return (path?.Split('/') ?? new string[] { }).Where(x => !string.IsNullOrEmpty(x)).Prepend("#");
         }
 
         private void Sync()
         {
             File.WriteAllText(_jsonFilePath, _json.ToString());
+        }
+
+        private bool IsRef(JToken value)
+        {
+            if (value is JObject)
+            {
+                return value["$ref"] != null;
+            }
+            else
+            {
+                return false;
+            }
         }
     }
 }

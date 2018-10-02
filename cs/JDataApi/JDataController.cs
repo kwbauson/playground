@@ -18,7 +18,7 @@ namespace JDataApi
         [HttpGet("{*path}")]
         public ActionResult<JToken> Get(string path)
         {
-            var result = _service.Get(path);
+            var result = _service.Resolve(_service.Get(path));
             if (result != null)
             {
                 return result;
