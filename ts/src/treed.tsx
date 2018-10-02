@@ -3,8 +3,6 @@ import { observable, action } from 'mobx'
 import { observer } from 'mobx-react'
 import shortid from 'shortid'
 
-type T1 = AST<'text', TextGrammar>['children']
-
 type AST<T extends keyof G, G extends Grammar<G>> = {
   type: T
 } & (G[T] extends { children: any; value: any }

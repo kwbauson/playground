@@ -1,0 +1,21 @@
+{
+  "Type": {
+    "Nat": {},
+    "Bool": {}
+  },
+  "Bool": {
+    "True": {},
+    "False": {}
+  },
+  "Nat": {
+    "Z": {},
+    "S": {
+      "$ref": "#/Nat"
+    }
+  },
+  "Maybe": {
+    "$ref": "#/Type"
+  },
+  "test": ["a", "b"],
+  "test2": []
+}
