@@ -4,28 +4,15 @@ import json, strformat, random
 
 type
   Network = ref object
-    nodes: seq[Node]
+    values: seq[float]
+    nodes: seq[seq[float]]
 
-  Node = ref object
-    value: float
-    connections: seq[Connection]
-
-  Connection = ref object
-    index: int
-    weight: float
-
-proc newNetwork(): Network =
+proc newNetwork(size: Natural = 0): Network =
   result.new
-  result.nodes = @[]
-
-proc newNode(): Node =
-  result.new
-  result.value = 0
-  result.connections = @[]
-
-proc newConnection(index: int, weight: float = 0): Connection =
-  result.new
-  result.index = index
+  result.values.newSeq(size)
+  result.nodes.newSeq(size)
+  for node in result.nodes.mitems:
+    node.newSeq(size)
 
 proc dump(net: Network, filename: string) =
   writeFile(filename, $ %*(net))
@@ -34,39 +21,30 @@ proc load(filename: string): Network =
   result = to(parseJson(readFile(filename)), Network)
 
 proc add(net: Network, count = 1) =
-  for _ in 0..<count:
-    net.nodes.add(newNode())
-
-proc connect(net: Network) =
-  for node in net.nodes:
-    for i in node.connections.len..net.nodes.high:
-      node.connections.add(newConnection(i))
+  discard
+  # for _ in 0..<count:
+  #   net.values.add(0.0)
 
 proc randomize(net: Network) =
-  for node in net.nodes:
-    node.value = rand(1.0)
-    for con in node.connections:
-      con.weight = rand(1.0)
-
-proc values(net: Network): seq[float] =
-  result = @[]
-  for node in net.nodes:
-    result.add(node.value)
+  for idx, node in net.nodes.mpairs:
+    net.values[idx] = rand(1.0)
+    for weight in node.mitems:
+      weight = rand(1.0)
 
 proc predict(net: Network): seq[float] =
   result = @[]
   for node in net.nodes:
     var value = 0.0
-    for con in node.connections:
-      value += net.nodes[con.index].value * con.weight
+    for idx, weight in node:
+      value += net.values[idx] * weight
     result.add(value)
 
 proc train(net: Network) =
   let predicted = net.predict
-  for node in net.nodes:
-    for con in node.connections:
-      let delta = net.nodes[con.index].value - predicted[con.index]
-      con.weight += delta * 0.3
+  for node in net.nodes.mitems:
+    for idx, weight in node.mpairs:
+      let delta = net.values[idx] - predicted[idx]
+      weight += delta * 0.3
 
 proc error(net: Network): float =
   result = 0.0
@@ -78,11 +56,11 @@ proc error(net: Network): float =
 
 proc `$`(net: Network): string =
   result = ""
-  for idx, node in net.nodes:
-    result &= &"{node.value:5.2f}:"
-    for con in node.connections:
-      result &= &" {con.weight:5.2f}"
-    if idx != net.nodes.high:
+  for idx, value in net.values:
+    result &= &"{value:5.2f}:"
+    for weight in net.nodes[idx]:
+      result &= &" {weight:5.2f}"
+    if idx != net.values.high:
       result &= "\n"
 
 
@@ -95,7 +73,6 @@ let
   n = newNetwork()
 
 n.add(4)
-n.connect()
 n.randomize()
 echo n
 for i in 0..<10:

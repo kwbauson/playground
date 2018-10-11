@@ -103,9 +103,10 @@ const testRoot: Env = {
   lang: makeRoot(
     fromMatrix([
       ['Type', 'Bool'],
-      ['Bool', Union(Word('True'), Word('False'))],
+      ['Bool', fromMatrix([['True'], ['False']])],
       ['Type', 'Nat'],
-      ['Nat', Union(Word('Z'), Concat(Word('S'), fromRoot(Word('Nat'))))],
+      ['Nat', fromMatrix([['Z'], ['S', fromRoot(Word('Nat'))]])],
+      // ['Nat', Union(Word('Z'), Concat(Word('S'), fromRoot(Word('Nat'))))],
     ]),
   ),
 }
