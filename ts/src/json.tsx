@@ -39,6 +39,8 @@ class ObjectView extends React.Component<{
 }> {
   @observable
   open = false
+  @observable
+  key = Array.isArray(this.props.value) ? '-' : ''
 
   render() {
     const { value } = this.props
@@ -52,10 +54,13 @@ class ObjectView extends React.Component<{
     return (
       <code>
         {opening}
-        <button>add</button>
+        <input size={5} onChange={this.handleKeyChange} value={this.key} />
+        <button disabled={this.key === ''} onClick={this.handleAdd}>
+          +
+        </button>
         {keys.length > 0 && (
           <>
-            <button onClick={this.toggle}>...</button>
+            <button onClick={this.toggle}>&hellip;</button>
             {this.open &&
               keys.map((key, i) => {
                 const $ref = `${this.props.$ref}/${key}`
@@ -94,9 +99,29 @@ class ObjectView extends React.Component<{
   remove(key: string) {
     const { value } = this.props
     if (Array.isArray(value)) {
-      value.splice(+key, 1)
+      const index = parseInt(key)
+      value.splice(index, 1)
     } else {
       delete value[key]
     }
+  }
+
+  handleAdd = () => {
+    const { value } = this.props
+    console.log(value, this.key)
+    if (Array.isArray(value)) {
+      if (this.key === '-') {
+        value.push(null)
+      } else {
+        const index = parseInt(this.key)
+        value.splice(index, 0, null)
+      }
+    } else {
+      value[this.key] = null
+    }
+  }
+
+  handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    this.key = e.currentTarget.value
   }
 }

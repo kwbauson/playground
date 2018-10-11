@@ -64,7 +64,7 @@ namespace JDataApi
             if (parent is JArray parentArray)
             {
                 var index = Convert.ToInt32(key);
-                if (index == -1)
+                if (key == "-")
                 {
                     parentArray.Add(value);
                     Sync();
