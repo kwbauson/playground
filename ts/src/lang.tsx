@@ -1,3 +1,5 @@
+import React from 'react'
+
 type Lang =
   | { type: 'union'; left: Lang; right: Lang }
   | { type: 'empty' }
@@ -7,16 +9,16 @@ type Lang =
   | { type: 'bind'; id: string; lang: Lang }
   | { type: 'var'; id: string }
 
-type Env = { bindings: { [id: string]: Lang }; lang: Lang }
+type Env = { lang: Lang; bindings: { [id: string]: Lang } }
 
 type Result =
   | { type: 'result'; env: Env }
   | { type: 'error'; message: string; env: Env }
 
-const Union = (...langs: [Lang, Lang, ...Lang[]]): Lang =>
-  langs.reduceRight((left, right) => ({ type: 'union', left, right }))
+const Union = (...langs: [Lang, ...Lang[]]): Lang =>
+  langs.reduceRight((right, left) => ({ type: 'union', left, right }))
 const Concat = (...langs: [Lang, Lang, ...Lang[]]): Lang =>
-  langs.reduceRight((left, right) => ({ type: 'concat', left, right }))
+  langs.reduceRight((right, left) => ({ type: 'concat', left, right }))
 const Word = (word: string): Lang => ({ type: 'word', word })
 const Bind = (id: string, lang: Lang): Lang => ({ type: 'bind', id, lang })
 const Quot = (left: Lang, right: Lang): Lang => ({ type: 'quot', left, right })
@@ -34,18 +36,18 @@ function fromMatrix(matrix: (string | Lang)[][]): Lang {
     const [first, second, ...rest] = langs
     return Union(first, second, ...rest)
   }
+}
 
-  function fromLine(line: (string | Lang)[]): Lang {
-    const langs = line.map(x => (typeof x === 'string' ? Word(x) : x))
-    if (langs.length === 0) {
-      return { type: 'empty' }
-    } else if (langs.length === 1) {
-      const [item] = langs
-      return item
-    } else {
-      const [first, second, ...rest] = langs
-      return Concat(first, second, ...rest)
-    }
+function fromLine(line: (string | Lang)[]): Lang {
+  const langs = line.map(x => (typeof x === 'string' ? Word(x) : x))
+  if (langs.length === 0) {
+    return { type: 'empty' }
+  } else if (langs.length === 1) {
+    const [item] = langs
+    return item
+  } else {
+    const [first, second, ...rest] = langs
+    return Concat(first, second, ...rest)
   }
 }
 
@@ -69,6 +71,22 @@ const error = (message: string, env: Env): Result => ({
 
 const makeRoot = (root: Lang): Lang => Concat(Bind('[]', root), Var('[]'))
 
+function hasVar(id: string, lang: Lang): boolean {
+  switch (lang.type) {
+    case 'empty':
+    case 'word':
+      return false
+    case 'var':
+      return id === lang.id
+    case 'bind':
+      return hasVar(id, lang.lang) // TODO shadowing
+    case 'concat':
+    case 'union':
+    case 'quot':
+      return hasVar(id, lang.left) || hasVar(id, lang.right)
+  }
+}
+
 function step(env: Env): Result {
   const { bindings, lang } = env
   const notImplimented = error('not implimented', env)
@@ -81,7 +99,11 @@ function step(env: Env): Result {
     case 'var':
       if (lang.id in bindings) {
         const { [lang.id]: newLang, ...newBindings } = bindings
-        return result(newBindings, newLang)
+        if (hasVar(lang.id, newLang)) {
+          return result(bindings, newLang)
+        } else {
+          return result(newBindings, newLang)
+        }
       } else {
         return error(`variable not found: ${lang.id}`, env)
       }
@@ -98,15 +120,102 @@ function step(env: Env): Result {
   }
 }
 
-const testRoot: Env = {
-  bindings: {},
-  lang: makeRoot(
-    fromMatrix([
-      ['Type', 'Bool'],
-      ['Bool', fromMatrix([['True'], ['False']])],
-      ['Type', 'Nat'],
-      ['Nat', fromMatrix([['Z'], ['S', fromRoot(Word('Nat'))]])],
-      // ['Nat', Union(Word('Z'), Concat(Word('S'), fromRoot(Word('Nat'))))],
-    ]),
-  ),
+function stepN(env: Env, count: number): Result {
+  if (count === 0) {
+    return result(env)
+  } else {
+    const result = step(env)
+    if (result.type === 'result') {
+      return stepN(result.env, count - 1)
+    } else {
+      return result
+    }
+  }
+}
+
+const rootResult = stepN(
+  {
+    lang: makeRoot(
+      fromMatrix([
+        ['Type', 'Bool'],
+        ['Bool', fromMatrix([['True'], ['False']])],
+        ['Type', 'Nat'],
+        ['Nat', fromMatrix([['Z'], ['S', fromRoot(Word('Nat'))]])],
+      ]),
+    ),
+    bindings: {},
+  },
+  2,
+)
+
+export const App = () => (
+  <div>
+    <div>
+      <ResultView result={rootResult} />
+    </div>
+    <hr />
+    <pre>{JSON.stringify(rootResult.env.lang, null, 2)}</pre>
+  </div>
+)
+
+const ResultView: React.ComponentType<{ result: Result }> = ({ result }) => (
+  <div>
+    {result.type === 'error' && <div>{result.message}</div>}
+    <EnvView env={result.env} />
+  </div>
+)
+
+const EnvView: React.ComponentType<{ env: Env }> = ({
+  env: { bindings, lang },
+}) => (
+  <div>
+    <LangView lang={lang} />
+    <hr />
+    <span>{JSON.stringify(Object.keys(bindings))}</span>
+  </div>
+)
+
+const LangView: React.ComponentType<{ lang: Lang }> = ({ lang }) => {
+  switch (lang.type) {
+    case 'empty':
+      return <span>{'{}'}</span>
+    case 'word':
+      return <span>{lang.word}</span>
+    case 'var':
+      return <span>{lang.id}</span>
+    case 'bind':
+      return (
+        <span>
+          {lang.id}
+          @(
+          <LangView lang={lang.lang} />)
+        </span>
+      )
+    case 'concat':
+      return (
+        <span>
+          (<LangView lang={lang.left} /> <LangView lang={lang.right} />)
+        </span>
+      )
+    case 'union':
+      return (
+        <span>
+          (<LangView lang={lang.left} /> | <LangView lang={lang.right} />)
+        </span>
+      )
+    case 'quot':
+      if (lang.left.type === 'var' && lang.left.id) {
+        return (
+          <span>
+            [<LangView lang={lang.right} />]
+          </span>
+        )
+      } else {
+        return (
+          <span>
+            (<LangView lang={lang.left} /> ~ <LangView lang={lang.right} />)
+          </span>
+        )
+      }
+  }
 }

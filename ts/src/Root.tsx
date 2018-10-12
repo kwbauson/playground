@@ -3,7 +3,8 @@ import { hot } from 'react-hot-loader'
 // import { App } from './edulytics'
 // import { App } from './treed'
 // import { App } from './json'
-import { App } from './tred'
+// import { App } from './tred'
+import { App } from './lang'
 import { observer } from 'mobx-react'
 
 @observer
