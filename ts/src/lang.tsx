@@ -87,6 +87,20 @@ function hasVar(id: string, lang: Lang): boolean {
   }
 }
 
+function canStep(lang: Lang): boolean {
+  switch (lang.type) {
+    case 'union':
+    case 'quot':
+    case 'bind':
+    case 'var':
+      return true
+    case 'concat':
+    case 'empty':
+    case 'word':
+      return false
+  }
+}
+
 function step(env: Env): Result {
   const { bindings, lang } = env
   const notImplimented = error('not implimented', env)
@@ -141,6 +155,28 @@ const rootResult = stepN(
         ['Bool', fromMatrix([['True'], ['False']])],
         ['Type', 'Nat'],
         ['Nat', fromMatrix([['Z'], ['S', fromRoot(Word('Nat'))]])],
+        [
+          Bind('A', fromRoot(Word('Type'))),
+          fromMatrix([
+            ['Type', 'Maybe', Var('A')],
+            ['Maybe', fromMatrix([['Nothing'], ['Just']])],
+          ]),
+        ],
+        [
+          Bind('a', fromRoot(Word('Nat'))),
+          Bind('b', fromRoot(Word('Nat'))),
+          'plus',
+          'a',
+          fromMatrix([
+            ['Z', Var('a')],
+            [
+              'S',
+              Var('b'),
+              'S',
+              fromRoot(fromMatrix([['plus', Var('a'), Var('b')]])),
+            ],
+          ]),
+        ],
       ]),
     ),
     bindings: {},
@@ -178,42 +214,70 @@ const EnvView: React.ComponentType<{ env: Env }> = ({
 const LangView: React.ComponentType<{ lang: Lang }> = ({ lang }) => {
   switch (lang.type) {
     case 'empty':
-      return <span>{'{}'}</span>
+      return <code>()</code>
     case 'word':
-      return <span>{lang.word}</span>
+      return <code>{lang.word}</code>
     case 'var':
-      return <span>{lang.id}</span>
+      return <code>{lang.id}</code>
     case 'bind':
-      return (
+      return lang.lang.type === 'quot' &&
+        lang.lang.left.type === 'var' &&
+        lang.lang.left.id === '[]' ? (
         <span>
-          {lang.id}
-          @(
-          <LangView lang={lang.lang} />)
+          <code>{lang.id}@</code>
+          <LangView lang={lang.lang} />
+        </span>
+      ) : (
+        <span>
+          <code>
+            {lang.id}
+            @(
+          </code>
+          <LangView lang={lang.lang} />
+          <code>)</code>
         </span>
       )
     case 'concat':
-      return (
+      return lang.right.type === 'union' ? (
         <span>
-          (<LangView lang={lang.left} /> <LangView lang={lang.right} />)
+          <LangView lang={lang.left} />
+          <div style={{ paddingLeft: 20 }}>
+            <LangView lang={lang.right} />
+          </div>
+        </span>
+      ) : (
+        <span>
+          <LangView lang={lang.left} /> <LangView lang={lang.right} />
         </span>
       )
     case 'union':
       return (
         <span>
-          (<LangView lang={lang.left} /> | <LangView lang={lang.right} />)
+          <div>
+            <LangView lang={lang.left} />
+          </div>
+          <div>
+            <LangView lang={lang.right} />
+          </div>
         </span>
       )
     case 'quot':
       if (lang.left.type === 'var' && lang.left.id) {
         return (
           <span>
-            [<LangView lang={lang.right} />]
+            <code>[</code>
+            <LangView lang={lang.right} />
+            <code>]</code>
           </span>
         )
       } else {
         return (
           <span>
-            (<LangView lang={lang.left} /> ~ <LangView lang={lang.right} />)
+            <code>(</code>
+            <LangView lang={lang.left} />
+            <code> ~ </code>
+            <LangView lang={lang.right} />
+            <code>)</code>
           </span>
         )
       }
