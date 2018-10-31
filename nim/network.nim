@@ -1,83 +1,86 @@
 #!/usr/bin/env runnim
 
-import json, strformat, random
+import json, strformat, random, sequtils, math, sugar, strutils, pegs, os
 
 type
   Network = ref object
     values: seq[float]
     nodes: seq[seq[float]]
 
-proc newNetwork(size: Natural = 0): Network =
-  result.new
-  result.values.newSeq(size)
-  result.nodes.newSeq(size)
-  for node in result.nodes.mitems:
-    node.newSeq(size)
+func newNetwork(size: Natural = 0): Network =
+  Network(
+    values: repeat(0.0, size),
+    nodes: repeat(0.0, size).repeat(size),
+  )
 
 proc dump(net: Network, filename: string) =
   writeFile(filename, $ %*(net))
 
 proc load(filename: string): Network =
-  result = to(parseJson(readFile(filename)), Network)
+  readFile(filename).parseJson().to(Network)
 
 proc add(net: Network, count = 1) =
-  discard
-  # for _ in 0..<count:
-  #   net.values.add(0.0)
+  net.values.add(repeat(0.0, count))
+  for weights in net.nodes.mitems:
+    weights.add(repeat(0.0, count))
+  for _ in 0..<count:
+    net.nodes.add(repeat(0.0, net.values.len))
 
 proc randomize(net: Network) =
-  for idx, node in net.nodes.mpairs:
-    net.values[idx] = rand(1.0)
+  for value in net.values.mitems:
+    value = rand(1.0)
+  for node in net.nodes.mitems:
     for weight in node.mitems:
       weight = rand(1.0)
 
-proc predict(net: Network): seq[float] =
-  result = @[]
-  for node in net.nodes:
-    var value = 0.0
-    for idx, weight in node:
-      value += net.values[idx] * weight
-    result.add(value)
+func predict(net: Network): seq[float] =
+  zip(net.values, net.nodes).map(p => p.b.map(w => w * p.a).sum())
+  # net.values.zip(net.nodes.map(ws => ws.sum)).map(p => p.a + p.b)
 
-proc train(net: Network) =
-  let predicted = net.predict
-  for node in net.nodes.mitems:
-    for idx, weight in node.mpairs:
-      let delta = net.values[idx] - predicted[idx]
-      weight += delta * 0.3
+func error(net: Network): float =
+  net.values.zip(net.predict).map(p => abs(p.a - p.b)).sum()
 
-proc error(net: Network): float =
-  result = 0.0
+proc train(net: Network, count = 1) =
+  for _ in 0..<count:
+    let
+      node = rand(0..net.values.high)
+      weight = rand(0..net.values.high)
+      old = net.nodes[node][weight]
+      oldError = net.error
+    net.nodes[node][weight] += rand(2.0) - 1
+    if net.error >= oldError:
+      net.nodes[node][weight] = old
+
+func `$`(net: Network): string =
+  zip(net.values, net.nodes)
+    .map(p => &"{p.a:5.2f}: " & p.b.map(w => &"{w:5.2f}").join(" "))
+    .join("\n")
+
+proc main(params: openArray[string]) =
   let
-    values = net.values
-    predicted = net.predict
-  for i in 0..values.high:
-    result += abs(predicted[i] - values[i])
+    cmd = if params.len > 0: params[0] else: ""
+    arg = if params.len > 1: parseInt(params[1]) else: 0
+  
+  const filename = "network.json"
+  randomize()
 
-proc `$`(net: Network): string =
-  result = ""
-  for idx, value in net.values:
-    result &= &"{value:5.2f}:"
-    for weight in net.nodes[idx]:
-      result &= &" {weight:5.2f}"
-    if idx != net.values.high:
-      result &= "\n"
+  var net = load(filename)
 
+  case cmd
+  of "new":
+    net = newNetwork(arg)
+  of "add":
+    net.add(arg)
+  of "train":
+    net.train(arg)
+  of "randomize":
+    net.randomize()
 
+  echo "values:  ", net.values.map(x => &"{x:5.2f}").join(" ")
+  echo "predict: ", net.predict.map(x => &"{x:5.2f}").join(" ")
+  echo "error: ", net.error
 
-const filename = "network.json"
-randomize()
+  net.dump(filename)
 
-let
-  # n = load(filename)
-  n = newNetwork()
-
-n.add(4)
-n.randomize()
-echo n
-for i in 0..<10:
-  n.train
-  echo &"{i}: {n.error}"
-echo n
-
-n.dump(filename)
+# main(commandLineParams())
+main(commandLineParams())
