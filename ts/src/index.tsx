@@ -10,7 +10,11 @@ import 'babel-polyfill'
 // import { App } from './dav'
 // import { App } from './vst'
 import { App } from './rst'
-;(App as React.ComponentType<{}>).displayName = 'App'
+Object.assign(App, { displayName: 'App ' })
+
+import * as mod from './met'
+
+Object.assign(window, mod)
 
 const root = document.getElementById('root')!
 

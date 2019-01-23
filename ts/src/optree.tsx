@@ -1,4 +1,4 @@
-type Tree<T> = {
+export type Tree<T> = {
   value: T
   parent?: Tree<T>
   children: Tree<T>[]
@@ -34,11 +34,11 @@ function findParent<T>(
 
 interface LangNode
   extends Tree<
-      | string
-      | { bind: string; lang: Lang }
-      | { ref: string }
-      | { quot: Lang; from: Lang }
-    > {}
+    | string
+    | { bind: string; lang: Lang }
+    | { ref: string }
+    | { quot: Lang; from: Lang }
+  > {}
 
 type Lang = LangNode[]
 
