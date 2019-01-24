@@ -2,29 +2,238 @@ import React from 'react'
 
 export = vtree
 namespace vtree {
-  export interface View<T = any> {
+  export class View<T, R> {
+    static create<R = any>(): View<undefined, R>
+    static create<T, R = T>(value: T): View<T, R>
+    static create(value?: any): View<any, any> {
+      return new View(value)
+    }
+
+    static component<T>(
+      render: (view: View<T, T>) => ViewNode | void,
+    ): React.StatelessComponent<T> {
+      return value =>
+        this.create()
+          .matchPath([], render)
+          .component(value)(value)
+    }
+
     value: T
-    children: { [K in keyof T]: View<T[K]> }
-    self: View<T>
+    children: { [K in keyof T]: View<T[K], R> } = {} as any
+    self: View<T, R> = this
     key: string
     path: string[]
-    root: View<any>
-    matchers: Matcher<any>[]
-    usedMatcher?: Matcher<T>
-    render(): JSX.Element
-    renderChildren(): JSX.Element
-    set(value: any): void
+    parent?: View<any, R>
+    root: View<R, R>
+    matchers: Matcher<any, R>[]
+    usedMatcher?: Matcher<T, R>
+
+    private forceUpdate?: () => void
+
+    private constructor(
+      value: T,
+      key = '',
+      path: string[] = [],
+      parent?: View<any, any>,
+      root?: View<any, any>,
+      matchers: Matcher<any, R>[] = [],
+    ) {
+      this.value = value
+      this.key = key
+      this.path = path
+      this.parent = parent
+      this.root = typeof root === 'undefined' ? (this as any) : root
+      this.matchers = matchers
+      this.updateChildren()
+
+      this.render = this.render.bind(this) as any
+      this.set = this.set.bind(this)
+      this.merge = this.merge.bind(this)
+      this.match = this.match.bind(this) as any
+      this.matchPath = this.matchPath.bind(this) as any
+      this.matchKey = this.matchKey.bind(this) as any
+      this.include = this.include.bind(this)
+      this.component = this.component.bind(this) as any
+    }
+
+    render(): JSX.Element {
+      const view = this
+      const reversed = view.matchers.slice(0).reverse()
+      class Container extends React.Component {
+        static displayName = `View[${view.key}]`
+
+        componentDidMount() {
+          view.forceUpdate = () => this.forceUpdate()
+        }
+
+        shouldComponentUpdate() {
+          return false
+        }
+
+        render() {
+          const found = reversed.find(({ guard }) => guard(view))
+          if (found) {
+            view.usedMatcher = found
+            if (typeof found.result === 'function') {
+              return renderViewNode(found.result(view))
+            } else {
+              return renderViewNode(found.result)
+            }
+          } else {
+            return <></>
+          }
+        }
+      }
+      return <Container />
+    }
+
     set(update: (value: T) => any): void
-    merge(value: object): void
+    set(value: any): void
+    set(value: any): void {
+      if (typeof value === 'function') {
+        this.set(value(this.value))
+      } else {
+        this.value = value
+        this.updateChildren()
+        this.refresh()
+        if (!this.usedMatcher) {
+          let current = this.self
+          let parent = this.parent
+          let key = this.key
+          while (parent && !parent.usedMatcher) {
+            parent.merge({ [key]: current.value })
+            current = parent
+            parent = parent.parent
+            key = current.key
+          }
+          if (parent) {
+            parent.refresh()
+          }
+        }
+        // TODO merge into parent (or not? really bad performance)
+        // if (this.parent) {
+        //   this.parent.merge({ [this.key]: value })
+        // }
+        // https://www.npmjs.com/package/deep-diff
+        // do we even want to do this?
+        // it breaks parent structural matching if the child changes structure
+        // then again, that might be a way children talk to parents/siblings
+        // but... value and children are out of sync...
+        // and that can be super confusing
+        // should I really go back to mobx??
+        // what about child values and children as getters of the root?
+        // currently merge into ancestors if not rendered...
+        // that probalby has some unintuitive consequences
+      }
+    }
+
     merge(update: (value: T) => object): void
-    match<A>(pattern: Pattern<A>, node: ViewNode): View<T>
-    match<A>(
-      pattern: Pattern<A>,
-      render: (view: View<A>) => ViewNode | void,
-    ): View<T>
-    match<A>(matcher: Matcher<A>): View<T>
-    include(view: View<any>): View<T>
-    start(value: any): JSX.Element
+    merge(value: object): void
+    merge(value: any): void {
+      if (typeof value === 'function') {
+        this.merge(value(this.value))
+      } else {
+        this.set(Object.assign({}, this.value, value))
+      }
+    }
+
+    match<A = any>(pattern: Pattern<A>, result: MatchResult<A, R>): View<T, R>
+    match<A = any>(matcher: Matcher<A, R>): View<T, R>
+    match(matchers: Matcher<any, R>[]): View<T, R>
+    match(...args: any[]): View<T, R> {
+      if (args.length === 1) {
+        if (Array.isArray(args[0])) {
+          this.matchers.push(...args[0])
+        } else {
+          this.matchers.push(args[0])
+        }
+      } else {
+        const [pattern, result] = args
+        this.matchers.push({
+          guard: view => patternMatches(pattern, view.value, false),
+          result,
+        })
+      }
+      return this
+    }
+
+    matchPath<A = any>(path: string[], result: MatchResult<A, R>): View<T, R>
+    matchPath<A = any>(
+      predicate: (path: string[]) => boolean,
+      result: MatchResult<A, R>,
+    ): View<T, R>
+    matchPath(
+      path: Function | string[],
+      result: MatchResult<any, R>,
+    ): View<T, R> {
+      this.matchers.push({
+        guard: view =>
+          typeof path === 'function'
+            ? path(view.path)
+            : path.length === view.path.length &&
+              path.every((k, i) => view.path[i] === k),
+        result,
+      })
+      return this
+    }
+
+    matchKey<A = any>(key: string, result: MatchResult<A, R>): View<T, R> {
+      return this.matchPath(p => key === p[p.length - 1], result)
+    }
+
+    include(view: View<any, R>): View<T, R> {
+      // FIXME broken?
+      this.matchers.push(...view.matchers)
+      return this
+    }
+
+    component(): React.StatelessComponent<T>
+    component(value: any): React.StatelessComponent
+    component(...args: any[]): React.StatelessComponent<any> {
+      const view = this
+      if (args.length === 0) {
+        return function ViewRoot(value) {
+          view.set(value)
+          return view.render()
+        }
+      } else {
+        return function ViewRoot() {
+          view.set(args[0])
+          return view.render()
+        }
+      }
+    }
+
+    private updateChildren(): void {
+      // TODO make this smarter
+      let children: any = {}
+      if (Array.isArray(this.value)) {
+        children = []
+      }
+      if (typeof this.value === 'object' && this.value !== null) {
+        for (const [key, value] of Object.entries(this.value)) {
+          children[key] = new View(
+            value,
+            key,
+            this.path.concat(key),
+            this,
+            this.root,
+            this.matchers.slice(0),
+          )
+        }
+      }
+      this.children = children
+    }
+
+    private refresh() {
+      if (this.forceUpdate) {
+        setTimeout(() => {
+          if (this.forceUpdate) {
+            this.forceUpdate()
+          }
+        }, 0)
+      }
+    }
   }
 
   export type ViewNode =
@@ -36,19 +245,20 @@ namespace vtree {
     | undefined
     | Promise<void>
     | ViewNodeArray
-    | View
+    | View<any, any>
 
   export interface ViewNodeArray extends Array<ViewNode> {}
 
-  export interface Matcher<T> {
-    guard(view: View<T>): boolean
-    render(view: View<T>): ViewNode | void
+  export interface Matcher<T, R> {
+    guard(view: View<T, R>): boolean
+    result: MatchResult<T, R>
   }
+
+  type MatchResult<T, R> = ViewNode | ((view: View<T, R>) => ViewNode | void)
 
   export type Pattern<T> =
     | ((value: any) => value is T)
     | ((value: any) => boolean)
-    | (new (...args: any) => T)
     | { [K in keyof T]?: Pattern<T[K]> }
     | symbol
     | object
@@ -71,13 +281,36 @@ namespace vtree {
     ? symbol
     : T
 
-  export function matchesPattern<T>(
+  export function patternMatches<T>(
     pattern: Pattern<T>,
     value: any,
     partial = false,
   ): value is T {
-    // TODO
-    return false
+    if (typeof pattern === 'function') {
+      return (pattern as any)(value)
+    } else if (
+      typeof pattern === 'object' &&
+      pattern !== null &&
+      typeof value === 'object' &&
+      value !== null
+    ) {
+      const matches = Object.entries(pattern).every(([key, p]) => {
+        if (key in value) {
+          return patternMatches(p, value[key], partial)
+        } else {
+          return false
+        }
+      })
+      if (partial) {
+        return matches
+      } else {
+        return (
+          matches && Object.keys(pattern).length === Object.keys(value).length
+        )
+      }
+    } else {
+      return pattern === value
+    }
   }
 
   export function is<T>(
@@ -103,28 +336,22 @@ namespace vtree {
     return (() => true) as any
   }
 
+  export function any(value: any): value is any {
+    return true
+  }
+
   export function exact<T>(pattern: Pattern<T>): (value: any) => value is T {
     function predicate(value: any): value is T {
-      return matchesPattern(pattern, value, false)
+      return patternMatches(pattern, value, false)
     }
     return predicate
   }
 
   export function partial<T>(pattern: Pattern<T>): (value: any) => value is T {
     function predicate(value: any): value is T {
-      return matchesPattern(pattern, value, true)
+      return patternMatches(pattern, value, true)
     }
     return predicate
-  }
-
-  export function render(view: View): JSX.Element {
-    const reversed = view.matchers.slice(0).reverse()
-    const found = reversed.find(({ guard }) => guard(view))
-    if (found) {
-      return renderViewNode(found.render(view))
-    } else {
-      return <></>
-    }
   }
 
   function renderViewNode(node: ViewNode | void): JSX.Element {
@@ -139,7 +366,7 @@ namespace vtree {
     }
   }
 
-  function isView(value: any): value is View {
+  function isView(value: any): value is View<any, any> {
     return (
       typeof value === 'object' &&
       value !== null &&
@@ -147,106 +374,5 @@ namespace vtree {
       'children' in value &&
       'render' in value
     )
-  }
-
-  export function renderChildren(view: View): JSX.Element {
-    return (
-      <>
-        {Object.values(view.children).map(x => (
-          <React.Fragment key={x.key}>{x.render()}</React.Fragment>
-        ))}
-      </>
-    )
-  }
-
-  export function set(view: View, value: any): void
-  export function set(view: View, update: (value: any) => any): void
-  export function set(view: View, arg: any): void {
-    if (typeof arg === 'function') {
-      view.set(arg(view.value))
-    } else {
-      throw new Error('set not implimented')
-    }
-  }
-
-  export function merge(view: View, value: object): void
-  export function merge(view: View, update: (value: any) => object): void
-  export function merge(view: View, arg: any): void {
-    if (typeof arg === 'function') {
-      view.merge(arg(view.value))
-    } else {
-      view.set(Object.assign({}, view.value, arg))
-    }
-  }
-
-  export function match<A>(
-    view: View,
-    pattern: Pattern<A>,
-    node: ViewNode,
-  ): View
-  export function match<A>(
-    view: View,
-    pattern: Pattern<A>,
-    render: (view: View<A>) => ViewNode | void,
-  ): View
-  export function match<A>(view: View, matcher: Matcher<A>): View
-  export function match(view: View, ...args: any[]): View {
-    let matcher: Matcher<any>
-    if (args.length === 1) {
-      matcher = args[0]
-    } else {
-      matcher = {
-        guard: view => matchesPattern(args[0], view.value, false),
-        render: typeof args[1] === 'function' ? args[1] : () => args[1],
-      }
-    }
-    return { ...view, matchers: view.matchers.concat(matcher) }
-  }
-
-  export function include(view: View, other: View): View {
-    return Object.assign({}, view, {
-      matchers: view.matchers.concat(other.matchers),
-    })
-  }
-
-  export function start(view: View, value: any): JSX.Element {
-    view.set(value)
-    return view.render()
-  }
-
-  export function createView(): View<undefined> {
-    const root: View<undefined> = {
-      value: undefined,
-      children: {} as any,
-      self: null as any,
-      key: '',
-      path: [],
-      root: null as any,
-      matchers: [],
-      render() {
-        return render(this)
-      },
-      renderChildren() {
-        return renderChildren(this)
-      },
-      set(arg: any) {
-        set(this, arg)
-      },
-      merge(arg: any) {
-        merge(this, arg)
-      },
-      match(...args: [any]) {
-        return match(this, ...args)
-      },
-      include(arg: any) {
-        return include(this, arg)
-      },
-      start(arg: any) {
-        return start(this, arg)
-      },
-    }
-    root.self = root
-    root.root = root
-    return root
   }
 }
