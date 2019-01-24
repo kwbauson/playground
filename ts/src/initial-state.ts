@@ -1,20 +1,17 @@
 export = {
   apis: {
-    selected: 'swapi',
-    tabs: {
-      info:
-        'see https://github.com/toddmotto/public-apis for a large list of public apis',
-      swapi: 'https://swapi.co/api/',
-      pokeapi: 'https://pokeapi.co/api/v2/',
-      schemastore: 'http://schemastore.org/api/json/catalog.json',
-      dogapi_random: 'https://dog.ceo/api/breeds/image/random',
-      chucknorris_random: 'http://api.icndb.com/jokes/random?exclude=[nerdy]',
-      meow: 'https://aws.random.cat/meow',
-      shlaapi: {
-        characters: 'https://rickandmortyapi.com/api/character',
-        episodes: 'https://rickandmortyapi.com/api/episode',
-        locations: 'https://rickandmortyapi.com/api/location',
-      },
+    info:
+      'see https://github.com/toddmotto/public-apis for a large list of public apis',
+    swapi: 'https://swapi.co/api/',
+    pokeapi: 'https://pokeapi.co/api/v2/',
+    schemastore: 'http://schemastore.org/api/json/catalog.json',
+    dogapi_random: 'https://dog.ceo/api/breeds/image/random',
+    chucknorris_random: 'http://api.icndb.com/jokes/random?exclude=[nerdy]',
+    meow: 'https://aws.random.cat/meow',
+    shlaapi: {
+      characters: 'https://rickandmortyapi.com/api/character',
+      episodes: 'https://rickandmortyapi.com/api/episode',
+      locations: 'https://rickandmortyapi.com/api/location',
     },
   },
   test: { edit_data: null, input: 'null', isString: false },

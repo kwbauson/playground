@@ -1,4 +1,5 @@
 import React from 'react'
+import t from 'io-ts'
 
 export = vtree
 namespace vtree {
@@ -20,7 +21,7 @@ namespace vtree {
 
     value: T
     children: { [K in keyof T]: View<T[K], R> } = {} as any
-    self: View<T, R> = this
+    self = this
     key: string
     path: string[]
     parent?: View<any, R>
@@ -65,7 +66,11 @@ namespace vtree {
         state = { ...view }
 
         componentDidMount() {
-          view.refresh = () => this.setState(this.state)
+          view.refresh = () => {
+            setTimeout(() => {
+              this.setState(this.state)
+            }, 0)
+          }
         }
 
         render() {
@@ -97,7 +102,7 @@ namespace vtree {
         }
         this.updateChildren()
 
-        let current = this.self
+        let current: View<T, R> = this.self
         let parent = this.parent
         while (parent && !current.refresh) {
           current = parent
@@ -119,10 +124,11 @@ namespace vtree {
       }
     }
 
-    match<A = any>(pattern: Pattern<A>, result: MatchResult<A, R>): View<T, R>
-    match<A = any>(matcher: Matcher<A, R>): View<T, R>
-    match(matchers: Matcher<any, R>[]): View<T, R>
-    match(...args: any[]): View<T, R> {
+    match<A = any>(pattern: Pattern<A>, result: MatchResult<A, R>): this
+    match<A = any>(matcher: Matcher<A, R>): this
+    match(matchers: Matcher<any, R>[]): this
+    match(...args: any[]): this {
+      // TODO can I use prop-types as a guard?
       if (args.length === 1) {
         if (Array.isArray(args[0])) {
           this.matchers.push(...args[0])
@@ -139,15 +145,12 @@ namespace vtree {
       return this
     }
 
-    matchPath<A = any>(path: string[], result: MatchResult<A, R>): View<T, R>
+    matchPath<A = any>(path: string[], result: MatchResult<A, R>): this
     matchPath<A = any>(
       predicate: (path: string[]) => boolean,
       result: MatchResult<A, R>,
-    ): View<T, R>
-    matchPath(
-      path: Function | string[],
-      result: MatchResult<any, R>,
-    ): View<T, R> {
+    ): this
+    matchPath(path: Function | string[], result: MatchResult<any, R>): this {
       this.matchers.push({
         guard: view =>
           typeof path === 'function'
@@ -159,12 +162,11 @@ namespace vtree {
       return this
     }
 
-    matchKey<A = any>(key: string, result: MatchResult<A, R>): View<T, R> {
+    matchKey<A = any>(key: string, result: MatchResult<A, R>): this {
       return this.matchPath(path => key === path[path.length - 1], result)
     }
 
-    include(view: View<any, R>): View<T, R> {
-      // FIXME broken?
+    include(view: View<any, R>): this {
       this.matchers.push(...view.matchers)
       return this
     }
@@ -233,6 +235,7 @@ namespace vtree {
   type MatchResult<T, R> = ViewNode | ((view: View<T, R>) => ViewNode | void)
 
   export type Pattern<T> =
+    | t.Type<T>
     | ((value: any) => value is T)
     | ((value: any) => boolean)
     | { [K in keyof T]?: Pattern<T[K]> }
@@ -262,7 +265,9 @@ namespace vtree {
     value: any,
     partial = false,
   ): value is T {
-    if (typeof pattern === 'function') {
+    if (pattern instanceof t.Type) {
+      return pattern.is(value)
+    } else if (typeof pattern === 'function') {
       return (pattern as any)(value)
     } else if (
       typeof pattern === 'object' &&
@@ -312,14 +317,10 @@ namespace vtree {
     return (() => true) as any
   }
 
-  export function any(value: any): value is any {
-    return true
-  }
-
   export function keys<T>(...keys: (keyof T)[]): Pattern<T> {
     const result: any = {}
     for (const key of keys) {
-      result[key] = any
+      result[key] = () => true
     }
     return result
   }

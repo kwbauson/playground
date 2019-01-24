@@ -1,5 +1,6 @@
 import React from 'react'
-import { View, any, is, keys } from './vtree'
+import { View, keys } from './vtree'
+import t from 'io-ts'
 import _ from 'lodash'
 
 function isUrl(value: any): value is string {
@@ -13,47 +14,52 @@ function isImageUrl(value: any): value is string {
   return isUrl(value) && !!value.match(/\.(jpe?g|gif|png)$/)
 }
 
+const jsonView = View.create().match(t.any, ({ value, children }) => {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value === null
+  ) {
+    return <code>{JSON.stringify(value)}</code>
+  } else if (Array.isArray(value) || _.isPlainObject(value)) {
+    const isArray = Array.isArray(value)
+    const entries = Object.entries(children)
+    const opening = isArray ? '[' : '{'
+    const closing = isArray ? ']' : '}'
+    return (
+      <>
+        <code>{opening}</code>
+        {entries.map(([key, val], i) => (
+          <div key={key} style={{ paddingLeft: 16 }}>
+            <code>{isArray ? i : JSON.stringify(key)}:&nbsp;</code>
+            {val.render()}
+            {i !== entries.length - 1 && <code>,</code>}
+          </div>
+        ))}
+        <code>{closing}</code>
+      </>
+    )
+  } else {
+    return (
+      <b>
+        <i>UNHANDLED</i>
+      </b>
+    )
+  }
+})
+
 export const App = View.create()
-  .match(any, ({ value, children }) => {
-    if (
-      typeof value === 'string' ||
-      typeof value === 'number' ||
-      typeof value === 'boolean' ||
-      value === null
-    ) {
-      return <code>{JSON.stringify(value)}</code>
-    } else if (Array.isArray(value) || _.isPlainObject(value)) {
-      const isArray = Array.isArray(value)
-      const entries = Object.entries(children)
-      const opening = isArray ? '[' : '{'
-      const closing = isArray ? ']' : '}'
-      return (
-        <>
-          <code>{opening}</code>
-          {entries.map(([key, val], i) => (
-            <div key={key} style={{ paddingLeft: 16 }}>
-              <code>{isArray ? i : JSON.stringify(key)}:&nbsp;</code>
-              {val.render()}
-              {i !== entries.length - 1 && <code>,</code>}
-            </div>
-          ))}
-          <code>{closing}</code>
-        </>
-      )
-    } else {
-      return (
-        <b>
-          <i>UNHANDLED</i>
-        </b>
-      )
-    }
-  })
+  .include(jsonView)
   .match(isUrl, ({ value: url, set }) => (
     <a
       href={url}
-      onClick={e => {
+      onClick={async e => {
         e.preventDefault()
-        set({ load: url })
+        set(`loading ${url}`)
+        const response = await fetch(url)
+        const json = await response.json()
+        set({ loaded: json, url })
       }}
     >
       {url}
@@ -62,19 +68,16 @@ export const App = View.create()
   .match(isImageUrl, ({ value }) => (
     <img src={value} style={{ maxWidth: 500 }} />
   ))
-  .match({ load: isUrl }, async ({ value: { load: url }, set }) => {
-    set({ loading: url })
-    const response = await fetch(url)
-    const json = await response.json()
-    set({ loaded: json, url })
-  })
-  .match({ loaded: any, url: isUrl }, ({ value: { url }, set, children }) => (
-    <>
-      <button onClick={() => set({ load: url })}>reload</button>
-      <button onClick={() => set(url)}>unload</button>
-      {children.loaded.render()}
-    </>
-  ))
+  .match(
+    { loaded: t.boolean, url: isUrl },
+    ({ value: { url }, set, children }) => (
+      <>
+        <button onClick={() => set({ load: url })}>reload</button>
+        <button onClick={() => set(url)}>unload</button>
+        {children.loaded.render()}
+      </>
+    ),
+  )
   .matchKey('click_to_change_root', ({ root }) => (
     <button
       onClick={() => {
@@ -84,22 +87,7 @@ export const App = View.create()
       random
     </button>
   ))
-  .match(
-    { tabs: any, selected: is(String) },
-    ({ children: { tabs, selected } }) => (
-      <>
-        <div>
-          {Object.keys(tabs.value).map(key => (
-            <button key={key} onClick={() => selected.set(key)}>
-              {key}
-            </button>
-          ))}
-        </div>
-        {tabs.children[selected.value].render()}
-      </>
-    ),
-  )
-  .match({ counter: is(Number) }, ({ children: { counter } }) => (
+  .match({ counter: t.number }, ({ children: { counter } }) => (
     <>
       <button onClick={() => counter.set(x => x - 1)}>-</button>
       {counter.value}
@@ -132,8 +120,8 @@ export const App = View.create()
         onMouseDown={e => {
           if (!clicked.value) {
             clicked.set(true)
-            x.set(e.clientX - width.value / 2)
-            y.set(e.clientY - height.value / 2)
+            x.set(e.pageX - width.value / 2)
+            y.set(e.pageY - height.value / 2)
           }
           e.preventDefault()
           xOff.set(e.pageX - x.value)

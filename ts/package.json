@@ -15,6 +15,7 @@
     "@rmwc/circular-progress": "^4.0.6",
     "axios": "^0.18.0",
     "babel-polyfill": "^6.26.0",
+    "io-ts": "^1.7.0",
     "json-refs": "^3.0.12",
     "lodash": "^4.17.11",
     "mobx": "^5.9.0",
