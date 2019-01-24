@@ -42,9 +42,12 @@ export = {
   text_box: 'type here',
   drag_me: {
     dragging: false,
+    width: 100,
+    height: 100,
     x: 100,
     y: 500,
     xOff: 0,
     yOff: 0,
+    clicked: false,
   },
 }

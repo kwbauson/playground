@@ -113,19 +113,28 @@ export const App = View.create()
     <input type="number" value={value} onChange={e => set(e.target.value)} />
   ))
   .match(
-    keys('dragging', 'x', 'y', 'xOff', 'yOff'),
-    ({ children: { dragging, x, y, xOff, yOff } }) => (
+    keys('dragging', 'width', 'height', 'x', 'y', 'xOff', 'yOff', 'clicked'),
+    ({ children: { dragging, width, height, x, y, xOff, yOff, clicked } }) => (
       <div
         style={{
-          width: 100,
-          height: 100,
+          width: width.value,
+          height: height.value,
           background: 'blue',
           border: '1px solid black',
-          position: 'absolute',
-          left: x.value,
-          top: y.value,
+          ...(clicked.value
+            ? {
+                position: 'absolute',
+                left: x.value,
+                top: y.value,
+              }
+            : {}),
         }}
         onMouseDown={e => {
+          if (!clicked.value) {
+            clicked.set(true)
+            x.set(e.clientX - width.value / 2)
+            y.set(e.clientY - height.value / 2)
+          }
           e.preventDefault()
           xOff.set(e.pageX - x.value)
           yOff.set(e.pageY - y.value)

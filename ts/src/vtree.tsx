@@ -169,23 +169,23 @@ namespace vtree {
       return this
     }
 
-    component(): React.StatelessComponent<T> & { view: View<T, R> }
-    component(value: any): React.StatelessComponent & { view: View<any, R> }
+    component(): React.StatelessComponent<T>
+    component<A, B = A>(
+      value: A,
+    ): React.StatelessComponent & { view: View<A, B> }
     component(...args: any[]): React.StatelessComponent<any> {
-      const view = this
-      let result: React.StatelessComponent<any>
       if (args.length === 0) {
-        result = function ViewRoot(value) {
-          view.set(value)
-          return view.render()
+        return function ViewRoot(value: any) {
+          return View.create(value).render()
         }
       } else {
-        result = function ViewRoot() {
+        const view = this
+        function ViewRoot() {
           view.set(args[0])
           return view.render()
         }
+        return Object.assign(ViewRoot, { view })
       }
-      return Object.assign(result, { view })
     }
 
     private updateChildren(): void {
