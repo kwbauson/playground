@@ -174,12 +174,14 @@ namespace vtree {
       value: A,
     ): React.StatelessComponent & { view: View<A, B> }
     component(...args: any[]): React.StatelessComponent<any> {
+      const view = this
       if (args.length === 0) {
         return function ViewRoot(value: any) {
-          return View.create(value).render()
+          return View.create(value)
+            .include(view)
+            .render()
         }
       } else {
-        const view = this
         function ViewRoot() {
           view.set(args[0])
           return view.render()
