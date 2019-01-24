@@ -28,7 +28,7 @@ namespace vtree {
     matchers: Matcher<any, R>[]
     usedMatcher?: Matcher<T, R>
 
-    private forceUpdate?: () => void
+    private refresh?: () => void
 
     private constructor(
       value: T,
@@ -62,12 +62,10 @@ namespace vtree {
       class Container extends React.Component {
         static displayName = `View[${view.key}]`
 
-        componentDidMount() {
-          view.forceUpdate = () => this.forceUpdate()
-        }
+        state = { view }
 
-        shouldComponentUpdate() {
-          return false
+        componentDidMount() {
+          view.refresh = () => this.setState(this.state)
         }
 
         render() {
@@ -95,20 +93,18 @@ namespace vtree {
       } else {
         this.value = value
         this.updateChildren()
-        this.refresh()
-        if (!this.usedMatcher) {
-          let current = this.self
-          let parent = this.parent
-          let key = this.key
-          while (parent && !parent.usedMatcher) {
-            parent.merge({ [key]: current.value })
-            current = parent
-            parent = parent.parent
-            key = current.key
-          }
-          if (parent) {
-            parent.refresh()
-          }
+
+        let current = this.self
+        let parent = this.parent
+        let key = this.key
+        while (parent && !current.usedMatcher) {
+          parent.value[key] = current.value
+          current = parent
+          parent = parent.parent
+          key = current.key
+        }
+        if (current.refresh) {
+          current.refresh()
         }
         // TODO merge into parent (or not? really bad performance)
         // if (this.parent) {
@@ -223,16 +219,6 @@ namespace vtree {
         }
       }
       this.children = children
-    }
-
-    private refresh() {
-      if (this.forceUpdate) {
-        setTimeout(() => {
-          if (this.forceUpdate) {
-            this.forceUpdate()
-          }
-        }, 0)
-      }
     }
   }
 

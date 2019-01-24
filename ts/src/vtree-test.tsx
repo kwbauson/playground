@@ -75,13 +75,13 @@ export const App = View.create()
       {children.loaded.render()}
     </>
   ))
-  .matchKey('click_to_change_root', ({ root, key, self }) => (
+  .matchKey('click_to_change_root', ({ root }) => (
     <button
       onClick={() => {
         root.children.random_number.set(Math.random())
       }}
     >
-      {key}
+      random
     </button>
   ))
   .match(
@@ -99,19 +99,50 @@ export const App = View.create()
       </>
     ),
   )
-  .match({ counter: is(Number) }, ({ children: { counter } }) => (
+  .match({ counter: is(Number) }, ({ value: { counter }, children }) => (
     <>
-      <button onClick={() => counter.set(x => x - 1)}>-</button>
-      {counter.value}
-      <button onClick={() => counter.set(x => x + 1)}>+</button>
+      <button onClick={() => children.counter.set(x => x - 1)}>-</button>
+      {counter}
+      <button onClick={() => children.counter.set(x => x + 1)}>+</button>
     </>
   ))
   .matchKey('text_box', ({ value, set }) => (
     <input value={value} onChange={e => set(e.target.value)} />
   ))
   .matchKey('random_number', ({ value, set }) => (
-    <input value={value} onChange={e => set(e.target.value)} />
+    <input type="number" value={value} onChange={e => set(e.target.value)} />
   ))
+  .match(
+    { dragging: any, x: any, y: any, xOff: any, yOff: any },
+    ({ children: { dragging, x, y, xOff, yOff } }) => (
+      <div
+        style={{
+          width: 100,
+          height: 100,
+          background: 'blue',
+          border: '1px solid black',
+          position: 'absolute',
+          left: x.value,
+          top: y.value,
+        }}
+        onMouseDown={e => {
+          e.preventDefault()
+          xOff.set(e.pageX - x.value)
+          yOff.set(e.pageY - y.value)
+          dragging.set(true)
+        }}
+        onMouseMove={e => {
+          if (dragging.value) {
+            x.set(e.pageX - xOff.value)
+            y.set(e.pageY - yOff.value)
+          }
+        }}
+        onMouseUp={() => {
+          dragging.set(false)
+        }}
+      />
+    ),
+  )
   .component({
     apis: {
       selected: 'swapi',
@@ -154,6 +185,13 @@ export const App = View.create()
     counter: { counter: 0 },
     random_number: 0,
     text_box: 'type here',
+    drag_me: {
+      dragging: false,
+      x: 100,
+      y: 500,
+      xOff: 0,
+      yOff: 0,
+    },
   })
 
 // FIXME loading is type {}
