@@ -99,11 +99,11 @@ export const App = View.create()
       </>
     ),
   )
-  .match({ counter: is(Number) }, ({ value: { counter }, children }) => (
+  .match({ counter: is(Number) }, ({ children: { counter } }) => (
     <>
-      <button onClick={() => children.counter.set(x => x - 1)}>-</button>
-      {counter}
-      <button onClick={() => children.counter.set(x => x + 1)}>+</button>
+      <button onClick={() => counter.set(x => x - 1)}>-</button>
+      {counter.value}
+      <button onClick={() => counter.set(x => x + 1)}>+</button>
     </>
   ))
   .matchKey('text_box', ({ value, set }) => (
