@@ -62,7 +62,7 @@ namespace vtree {
       class Container extends React.Component {
         static displayName = `View[${view.key}]`
 
-        state = { view }
+        state = { ...view }
 
         componentDidMount() {
           view.refresh = () => this.setState(this.state)
@@ -92,34 +92,20 @@ namespace vtree {
         this.set(value(this.value))
       } else {
         this.value = value
+        if (this.parent) {
+          this.parent.value[this.key] = value
+        }
         this.updateChildren()
 
         let current = this.self
         let parent = this.parent
-        let key = this.key
-        while (parent && !current.usedMatcher) {
-          parent.value[key] = current.value
+        while (parent && !current.refresh) {
           current = parent
           parent = parent.parent
-          key = current.key
         }
         if (current.refresh) {
           current.refresh()
         }
-        // TODO merge into parent (or not? really bad performance)
-        // if (this.parent) {
-        //   this.parent.merge({ [this.key]: value })
-        // }
-        // https://www.npmjs.com/package/deep-diff
-        // do we even want to do this?
-        // it breaks parent structural matching if the child changes structure
-        // then again, that might be a way children talk to parents/siblings
-        // but... value and children are out of sync...
-        // and that can be super confusing
-        // should I really go back to mobx??
-        // what about child values and children as getters of the root?
-        // currently merge into ancestors if not rendered...
-        // that probalby has some unintuitive consequences
       }
     }
 
@@ -174,7 +160,7 @@ namespace vtree {
     }
 
     matchKey<A = any>(key: string, result: MatchResult<A, R>): View<T, R> {
-      return this.matchPath(p => key === p[p.length - 1], result)
+      return this.matchPath(path => key === path[path.length - 1], result)
     }
 
     include(view: View<any, R>): View<T, R> {
@@ -183,25 +169,27 @@ namespace vtree {
       return this
     }
 
-    component(): React.StatelessComponent<T>
-    component(value: any): React.StatelessComponent
+    component(): React.StatelessComponent<T> & { view: View<T, R> }
+    component(value: any): React.StatelessComponent & { view: View<any, R> }
     component(...args: any[]): React.StatelessComponent<any> {
       const view = this
+      let result: React.StatelessComponent<any>
       if (args.length === 0) {
-        return function ViewRoot(value) {
+        result = function ViewRoot(value) {
           view.set(value)
           return view.render()
         }
       } else {
-        return function ViewRoot() {
+        result = function ViewRoot() {
           view.set(args[0])
           return view.render()
         }
       }
+      return Object.assign(result, { view })
     }
 
     private updateChildren(): void {
-      // TODO make this smarter
+      // TODO make this smarter and use getters
       let children: any = {}
       if (Array.isArray(this.value)) {
         children = []
@@ -324,6 +312,14 @@ namespace vtree {
 
   export function any(value: any): value is any {
     return true
+  }
+
+  export function keys<T>(...keys: (keyof T)[]): Pattern<T> {
+    const result: any = {}
+    for (const key of keys) {
+      result[key] = any
+    }
+    return result
   }
 
   export function exact<T>(pattern: Pattern<T>): (value: any) => value is T {
