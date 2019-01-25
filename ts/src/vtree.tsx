@@ -1,22 +1,33 @@
 import React from 'react'
-import t from 'io-ts'
+import * as t from 'io-ts'
 
 export = vtree
 namespace vtree {
-  export class View<T, R> {
+  export class View<T, R = any> {
     static create<R = any>(): View<undefined, R>
     static create<T, R = T>(value: T): View<T, R>
     static create(value?: any): View<any, any> {
       return new View(value)
     }
 
-    static component<T>(
+    static component<T = any>(
+      value: T,
       render: (view: View<T, T>) => ViewNode | void,
-    ): React.StatelessComponent<T> {
-      return value =>
-        this.create()
-          .matchPath([], render)
-          .component(value)(value)
+    ): React.FunctionComponent
+    static component<T = any>(
+      render: (view: View<T, T>) => ViewNode | void,
+    ): React.FunctionComponent<T>
+    static component<T = any>(...args: any[]): React.FunctionComponent<T> {
+      if (args.length === 1) {
+        return value =>
+          this.create()
+            .matchPath([], args[0])
+            .component(value)(value)
+      } else {
+        return this.create(args[0])
+          .matchPath([], args[1])
+          .component()
+      }
     }
 
     value: T
@@ -124,13 +135,25 @@ namespace vtree {
       }
     }
 
+    match<A = any>(component: ViewComponent<A>): this
     match<A = any>(pattern: Pattern<A>, result: MatchResult<A, R>): this
     match<A = any>(matcher: Matcher<A, R>): this
     match(matchers: Matcher<any, R>[]): this
     match(...args: any[]): this {
-      // TODO can I use prop-types as a guard?
       if (args.length === 1) {
-        if (Array.isArray(args[0])) {
+        if (typeof args[0] === 'function' && args[0].guard) {
+          const Component = args[0]
+          this.matchers.push({
+            guard: args[0].guard,
+            result: view => <Component {...{ view }} />,
+          })
+        } else if (typeof args[0] === 'function' && args[0].pattern) {
+          const Component = args[0]
+          this.matchers.push({
+            guard: view => patternMatches(args[0].pattern, view.value),
+            result: view => <Component {...{ view }} />,
+          })
+        } else if (Array.isArray(args[0])) {
           this.matchers.push(...args[0])
         } else {
           this.matchers.push(args[0])
@@ -138,7 +161,7 @@ namespace vtree {
       } else {
         const [pattern, result] = args
         this.matchers.push({
-          guard: view => patternMatches(pattern, view.value, false),
+          guard: view => patternMatches(pattern, view.value),
           result,
         })
       }
@@ -171,11 +194,11 @@ namespace vtree {
       return this
     }
 
-    component(): React.StatelessComponent<T>
+    component(): React.FunctionComponent<T>
     component<A, B = A>(
       value: A,
-    ): React.StatelessComponent & { view: View<A, B> }
-    component(...args: any[]): React.StatelessComponent<any> {
+    ): React.FunctionComponent & { view: View<A, B> }
+    component(...args: any[]): React.FunctionComponent<any> {
       const view = this
       if (args.length === 0) {
         return function ViewRoot(value: any) {
@@ -231,6 +254,9 @@ namespace vtree {
     guard(view: View<T, R>): boolean
     result: MatchResult<T, R>
   }
+
+  export type ViewComponent<T> = React.ComponentType<{ view: View<T, any> }> &
+    ({ pattern: Pattern<T> } | { guard: (view: View<T, any>) => boolean })
 
   type MatchResult<T, R> = ViewNode | ((view: View<T, R>) => ViewNode | void)
 

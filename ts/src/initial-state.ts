@@ -15,26 +15,9 @@ export = {
     },
   },
   test: { edit_data: null, input: 'null', isString: false },
-  this: {
-    is: {
-      a: {
-        deeply: {
-          nested: {
-            object: {
-              that: {
-                changes: {
-                  root: {
-                    click_to_change_root: null,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-  counter: { counter: 0 },
+  click_to_change_root: null,
+  array: [1, 2, 3],
+  counter: { count: 0 },
   random_number: 0,
   text_box: 'type here',
   drag_me: {

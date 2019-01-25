@@ -1,6 +1,6 @@
 import React from 'react'
 import { View, keys } from './vtree'
-import t from 'io-ts'
+import * as t from 'io-ts'
 import _ from 'lodash'
 
 function isUrl(value: any): value is string {
@@ -11,87 +11,75 @@ function isUrl(value: any): value is string {
 }
 
 function isImageUrl(value: any): value is string {
-  return isUrl(value) && !!value.match(/\.(jpe?g|gif|png)$/)
+  return isUrl(value) && !!value.match(/\.(jpe?g|gif|png)$/i)
 }
 
-const jsonView = View.create().match(t.any, ({ value, children }) => {
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    value === null
-  ) {
-    return <code>{JSON.stringify(value)}</code>
-  } else if (Array.isArray(value) || _.isPlainObject(value)) {
-    const isArray = Array.isArray(value)
-    const entries = Object.entries(children)
-    const opening = isArray ? '[' : '{'
-    const closing = isArray ? ']' : '}'
-    return (
-      <>
-        <code>{opening}</code>
-        {entries.map(([key, val], i) => (
-          <div key={key} style={{ paddingLeft: 16 }}>
-            <code>{isArray ? i : JSON.stringify(key)}:&nbsp;</code>
-            {val.render()}
-            {i !== entries.length - 1 && <code>,</code>}
-          </div>
-        ))}
-        <code>{closing}</code>
-      </>
-    )
-  } else {
-    return (
-      <b>
-        <i>UNHANDLED</i>
-      </b>
-    )
-  }
-})
+const jsonView = View.create()
+  .match(t.union([t.string, t.number, t.boolean, t.null]), ({ value }) => (
+    <code>{JSON.stringify(value)}</code>
+  ))
+  .match(
+    x => Array.isArray(x) || _.isPlainObject(x),
+    ({ value, children }) => {
+      const isArray = Array.isArray(value)
+      const entries = Object.entries(children)
+      const opening = isArray ? '[' : '{'
+      const closing = isArray ? ']' : '}'
+      return (
+        <>
+          <code>{opening}</code>
+          {entries.map(([key, val], i) => (
+            <div key={key} style={{ paddingLeft: 16 }}>
+              <code>{isArray ? i : JSON.stringify(key)}:&nbsp;</code>
+              {val.render()}
+              {i !== entries.length - 1 && <code>,</code>}
+            </div>
+          ))}
+          <code>{closing}</code>
+        </>
+      )
+    },
+  )
 
 export const App = View.create()
+  .match(t.any, <i>UNHANDLED</i>)
   .include(jsonView)
   .match(isUrl, ({ value: url, set }) => (
     <a
       href={url}
-      onClick={async e => {
+      onClick={e => {
         e.preventDefault()
-        set(`loading ${url}`)
-        const response = await fetch(url)
-        const json = await response.json()
-        set({ loaded: json, url })
+        set({ load: url })
       }}
-    >
-      {url}
-    </a>
+      children={url}
+    />
   ))
   .match(isImageUrl, ({ value }) => (
     <img src={value} style={{ maxWidth: 500 }} />
   ))
-  .match(
-    { loaded: t.boolean, url: isUrl },
-    ({ value: { url }, set, children }) => (
-      <>
-        <button onClick={() => set({ load: url })}>reload</button>
-        <button onClick={() => set(url)}>unload</button>
-        {children.loaded.render()}
-      </>
-    ),
-  )
+  .match({ load: isUrl }, async ({ value: { load: url }, set }) => {
+    set(`loading ${url}`)
+    const response = await fetch(url)
+    const json = await response.json()
+    set({ loaded: json, url })
+  })
+  .match({ loaded: t.any, url: isUrl }, ({ value: { url }, set, children }) => (
+    <>
+      <button onClick={() => set({ load: url })}>reload</button>
+      <button onClick={() => set(url)}>unload</button>
+      {children.loaded.render()}
+    </>
+  ))
   .matchKey('click_to_change_root', ({ root }) => (
-    <button
-      onClick={() => {
-        root.children.random_number.set(Math.random())
-      }}
-    >
+    <button onClick={() => root.children.random_number.set(Math.random())}>
       random
     </button>
   ))
-  .match({ counter: t.number }, ({ children: { counter } }) => (
+  .match({ count: t.number }, ({ children: { count } }) => (
     <>
-      <button onClick={() => counter.set(x => x - 1)}>-</button>
-      {counter.value}
-      <button onClick={() => counter.set(x => x + 1)}>+</button>
+      <button onClick={() => count.set(x => x - 1)}>-</button>
+      {count.value}
+      <button onClick={() => count.set(x => x + 1)}>+</button>
     </>
   ))
   .matchKey('text_box', ({ value, set }) => (
