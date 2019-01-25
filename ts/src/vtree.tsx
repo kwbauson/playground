@@ -135,7 +135,8 @@ namespace vtree {
       }
     }
 
-    match<A = any>(component: ViewComponent<A>): this
+    match<A = any>(component: ViewComponent<A, R>): this
+    match(components: ViewComponent<any, R>[]): this
     match<A = any>(pattern: Pattern<A>, result: MatchResult<A, R>): this
     match<A = any>(matcher: Matcher<A, R>): this
     match(matchers: Matcher<any, R>[]): this
@@ -154,7 +155,9 @@ namespace vtree {
             result: view => <Component {...{ view }} />,
           })
         } else if (Array.isArray(args[0])) {
-          this.matchers.push(...args[0])
+          for (const matcher of args[0]) {
+            this.match(matcher)
+          }
         } else {
           this.matchers.push(args[0])
         }
@@ -255,8 +258,8 @@ namespace vtree {
     result: MatchResult<T, R>
   }
 
-  export type ViewComponent<T> = React.ComponentType<{ view: View<T, any> }> &
-    ({ pattern: Pattern<T> } | { guard: (view: View<T, any>) => boolean })
+  export type ViewComponent<T, R> = React.ComponentType<{ view: View<T, R> }> &
+    ({ pattern: Pattern<T> } | { guard: (view: View<T, R>) => boolean })
 
   type MatchResult<T, R> = ViewNode | ((view: View<T, R>) => ViewNode | void)
 
