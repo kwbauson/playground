@@ -2,6 +2,10 @@ import React from 'react'
 import { View, keys, is } from './vtree'
 import * as t from 'io-ts'
 import _ from 'lodash'
+import util from 'util'
+import * as babelModule from '@babel/core'
+
+export const babel = babelModule
 
 class Entry<T, R = any> {
   constructor(public key: string | number, public value: View<T, R>) {}
@@ -50,7 +54,7 @@ function isImageUrl(value: any): value is string {
   return isUrl(value) && !!value.match(/\.(jpe?g|gif|png)$/i)
 }
 
-export const App = View.create()
+const appView = View.create()
   .match(t.any, <i>UNHANDLED</i>)
   .include(jsonView)
   .match(isUrl, ({ value: url, set }) => (
@@ -137,87 +141,106 @@ export const App = View.create()
       />
     ),
   )
-  .match<Entry<Todo[]>>(
-    x => is(Entry)(x) && x.key === 'todoMvc',
-    ({ value: entry }) => entry.value,
-  )
-  .match<TodoMVC>(
-    keys('newTodo', 'todos', 'viewing'),
-    ({ children: { newTodo, todos, viewing } }) => (
-      <div>
-        <div>todos</div>
-        <div>
-          <input
-            value={newTodo.value}
-            onChange={e => newTodo.set(e.target.value)}
-            placeholder="What needs to be done?"
-          />
-          <button
-            onClick={() => {
-              todos.set(xs => [
-                ...xs,
-                { text: newTodo.value, completed: false },
-              ])
-            }}
-          >
-            add
-          </button>
-        </div>
-        {todos.children
-          .filter(
-            x =>
-              viewing.value === 'all' ||
-              (viewing.value == 'active' && !x.value.completed) ||
-              (viewing.value === 'completed' && x.value.completed),
-          )
-          .map(x => (
-            <Todo key={x.key} view={x} />
-          ))}
-        <div style={{ justifyContent: 'space-between' }}>
-          <span>{todos.value.filter(x => !x.completed).length} items left</span>
-          <span>
-            <button onClick={() => viewing.set('all')}>all</button>
-            <button onClick={() => viewing.set('active')}>active</button>
-            <button onClick={() => viewing.set('completed')}>completed</button>
-          </span>
-          <button
-            onClick={() => todos.set(todos.value.filter(x => !x.completed))}
-          >
-            clear completed
-          </button>
-        </div>
-      </div>
-    ),
-  )
-  .match({ text: t.string, completed: t.boolean }, ({ children }) => (
-    <div>
-      <input type="check" />
-    </div>
-  ))
-  .component(require('./initial-state'))
 
-const Todo: React.FunctionComponent<{ view: View<Todo> }> = ({
-  view: {
-    children: { text, completed },
-  },
-}) => (
-  <div>
-    <button onClick={() => completed.set(x => !x)}>
-      {completed.value ? 'uncomplete' : 'complete'}
-    </button>
-    <span>{text.value}</span>
-  </div>
+const HoleName = Symbol('HoleName')
+const HoleGot = Symbol('HoleGot')
+
+export class Hole extends Function {
+  static create<T = any>(name: string): T & Hole {
+    return new Proxy(new Hole(name) as any, {
+      get: (target, prop) => {
+        if (
+          prop === Symbol.toPrimitive ||
+          prop === HoleName ||
+          prop === HoleGot
+        ) {
+          return target[prop]
+        } else {
+          const append =
+            typeof prop === 'string'
+              ? name !== ''
+                ? '.' + prop
+                : prop
+              : '[' + String(prop) + ']'
+          return Hole.create(name + append)
+        }
+      },
+      apply: (target, thisArg, args: any[]) =>
+        Hole.create(
+          name + '(' + args.map(x => util.inspect(x)).join(', ') + ')',
+        ),
+    })
+  }
+
+  [HoleName]: string;
+  [HoleGot]: object = {}
+
+  private constructor(name: string) {
+    super()
+    this[HoleName] = name
+  }
+
+  [Symbol.toPrimitive](hint: 'number' | 'string' | 'default') {
+    return this[HoleName]
+  }
+}
+
+const originalCreateElement = React.createElement
+
+function previewCreateElement(
+  this: any,
+  type: any,
+  config: any,
+  children: any,
+): React.ReactElement<any> {
+  if (arguments.length > 2) {
+    let i = 0
+    for (const arg of arguments) {
+      if (i > 2 && arg instanceof Hole) {
+        arguments[i] = (
+          <i>
+            <b>{arg[HoleName]}</b>
+          </i>
+        )
+      }
+      i++
+    }
+  }
+  return originalCreateElement.apply(this, arguments as any)
+}
+
+React.createElement = previewCreateElement as any
+
+function preview<T>(component: React.ComponentType<T>): JSX.Element {
+  const props = Hole.create('props')
+  const element = React.createElement(component)
+  return Object.assign({}, element, { props })
+}
+
+const Demo = (props: any) => {
+  const { text } = props
+  return (
+    <div>
+      <div>original: {text}</div>
+      <div>upper case: {text.toUpperCase()}</div>
+      <div>lower case: {text.toLowerCase()}</div>
+      <input value={text} onChange={e => props.onChange(e.target.value)} />
+      <div>
+        reversed:{' '}
+        {text
+          .split('')
+          .reverse()
+          .join('')}
+      </div>
+    </div>
+  )
+}
+
+export const App = () => (
+  <>
+    {preview(Demo)}
+    {/* <Demo text="foo BAR" /> */}
+  </>
 )
 
-type TodoMVC = {
-  newTodo: string
-  todos: Todo[]
-  viewing: 'all' | 'active' | 'completed'
-}
-
-type Todo = {
-  text: string
-  completed: boolean
-}
-
-Object.assign(window, { rootView: App.view })
+// export const App = appView.component(require('./initial-state'))
