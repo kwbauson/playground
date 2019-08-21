@@ -1,46 +1,145 @@
 export type Glass<S, T> = {
   get(source: S): T
-  put(source: S, other: T): S
+  put(other: T, source: S): S
 
   of<U>(get: Get<U, S>, put: Put<U, S>): Glass<U, T>
   of<U>(other: Glass<U, S>): Glass<U, T>
   of<U>(other: Glass<U, ItemType<S>>[]): Glass<U, T>
-  of<U = never>(other: S): Glass<U, T>
-  of<U>(other: { [K in keyof S]: Some<S[K] | Glass<U, S[K]>> }): Glass<U, T>
-
-  from<U>(fn: (other: From<U>) => Glass<U, S>): Glass<U, T>
-  from<U>(fn: (other: From<U>) => Glass<U, ItemType<S>>[]): Glass<U, T>
+  of<U>(fn: (other: From<U>) => Glass<U, ItemType<S>>[]): Glass<U, T>
+  of<U>(fn: (other: From<U>) => Glass<U, S>): Glass<U, T>
+  of<U>(other: { [K in keyof S]: S[K] | Glass<U, S[K]> }): Glass<U, T>
 
   to<U>(get: Get<T, U>, put: Put<T, U>): Glass<S, U>
   to<U>(other: Glass<T, U>): Glass<S, U>
   to<U>(fn: (self: Glass<S, T>) => Glass<T, U>): Glass<S, U>
-  to<U>(other: Glass<T, U>[]): Glass<S, U[]>
-  to<U>(fn: (self: Glass<S, T>) => Glass<T, U>[]): Glass<S, U[]>
 
-  for<U extends For<S, U>>(
-    fn: (self: Glass<S, T>) => U,
-  ): Glass<S, ForType<S, U>>
-  for<U extends For<S, U>>(other: U): Glass<S, ForType<S, U>>
+  at<K extends keyof T>(key: K): Glass<S, T[K]>
 
   view<U>(fn: (other: T) => U): Glass<S, U>
 
   update(fn: (other: T) => T): Glass<S, boolean>
   set(other: T): Glass<S, boolean>
 
-  prop<K extends keyof T>(key: K): Glass<S, T[K]>
   map<U>(other: Glass<ItemType<T>, U>): Glass<S, U[]>
   map<U>(fn: (self: Glass<S, T>) => Glass<ItemType<T>, U>): Glass<S, U[]>
+}
+
+function Glass<S>(): Glass<S, S>
+function Glass<S, T>(get: Get<S, T>, put: Put<S, T>): Glass<S, T>
+function Glass<S, T>(glasses: Glass<S, T>[]): Glass<S, T[]>
+
+function Glass<S, T>(
+  ...args: [] | [Glass<S, T>[]] | [Get<S, T>, Put<S, T>]
+): Glass<S, T> | Glass<S, T[]> {
+  switch (args.length) {
+    case 2:
+      const [get, put] = args
+      const self: Glass<S, T> = {
+        get,
+        put,
+        of<U>(
+          ...ofArgs:
+            | [Get<U, S>, Put<U, S>]
+            | [Glass<U, S>]
+            | [Glass<U, ItemType<S>>[]]
+            | [(other: From<U>) => Glass<U, ItemType<S>>[]]
+            | [(other: From<U>) => Glass<U, S>]
+            | [{ [K in keyof S]: S[K] | Glass<U, S[K]> }]
+        ): Glass<U, T> {
+          switch (ofArgs.length) {
+            case 2:
+              return self.of(Glass(...ofArgs))
+            case 1:
+              const [other] = ofArgs
+              if (isGlass(other)) {
+                return other.to(self)
+              } else if (Array.isArray(other)) {
+                return self.of(Glass(other).to(asItems()))
+              } else if (
+                other === null ||
+                (typeof other !== 'object' && typeof other !== 'function')
+              ) {
+                return self.of(Glass<U>().view(() => other))
+              } else if (typeof other === 'function') {
+                const getGlass = (s: U) => {
+                  const gr = other(makeFrom(s))
+                  return Array.isArray(gr) ? Glass(gr).to(asItems()) : gr
+                }
+                return self.of<U>(
+                  s => getGlass(s).get(s),
+                  (os, s) => getGlass(s).put(os, s),
+                )
+              } else {
+                return self.of<U>(
+                  s =>
+                    Object.fromEntries<any>(
+                      mapEntries(other, g => (isGlass(g) ? g.get(s) : g)),
+                    ),
+                  (os, s) =>
+                    flatMapEntries(other, (g, k) =>
+                      isGlass(g) ? [[g, os[k]] as const] : [],
+                    ).reduceRight((acc, [g, o]) => g.put(o, acc) as U, s),
+                )
+              }
+          }
+        },
+        to<U>(
+          ...toArgs:
+            | [Get<T, U>, Put<T, U>]
+            | [Glass<T, U>]
+            | [(self: Glass<S, T>) => Glass<T, U>]
+        ): Glass<S, U> {
+          switch (toArgs.length) {
+            case 2:
+              const glass = Glass(...toArgs)
+              return Glass(
+                (s: S) => glass.get(self.get(s)),
+                (o, s) => self.put(glass.put(o, self.get(s)), s),
+              )
+            case 1:
+              const [other] = toArgs
+              if (isGlass(other)) {
+                return self.to(other.get, other.put)
+              } else {
+                return self.to(other(self))
+              }
+          }
+        },
+        at: key => self.to(s => s[key], (o, s) => ({ ...s, [key]: o })),
+        view: fn => self.to(fn, (_, s) => s),
+        update: fn => self.to(() => false, (o, s) => (o ? fn(s) : s)),
+        set: other => self.update(() => other),
+        map<U>(
+          other:
+            | Glass<ItemType<T>, U>
+            | ((self: Glass<S, T>) => Glass<ItemType<T>, U>),
+        ): Glass<S, U[]> {
+          if (typeof other === 'object') {
+            return self.to(
+              ss => mapIfArray(ss, other.get),
+              (us, ss) => mapIfArray(ss, (s, i) => other.put(us[i], s)),
+            )
+          } else {
+            return self.map(other(self))
+          }
+        },
+      }
+      return self
+    case 1:
+      const [glasses] = args
+      return Glass(
+        s => glasses.map(g => g.get(s)),
+        (os, si) => glasses.reduceRight((s, g, i) => g.put(os[i], s), si),
+      )
+    case 0:
+      return Glass<S & T, S & T>(s => s, s => s)
+  }
 }
 
 type Get<S, T> = Glass<S, T>['get']
 type Put<S, T> = Glass<S, T>['put']
 
 type ItemType<T> = T extends unknown[] ? T[number] : never
-type Some<T> = T | T[]
-type For<S, T> = { [K in keyof T]: Glass<S, T[K]> | T[K] }
-type ForType<S, T> = {
-  [K in keyof T]: T[K] extends Glass<S, infer U> ? U : T[K]
-}
 type From<S> = { [K in keyof S]: Glass<S, S[K]> }
 
 function isGlass(value: unknown): value is Glass<unknown, unknown> {
@@ -50,12 +149,11 @@ function isGlass(value: unknown): value is Glass<unknown, unknown> {
     'get' in value &&
     'put' in value &&
     'of' in value &&
-    'from' in value &&
     'to' in value &&
+    'at' in value &&
     'view' in value &&
     'update' in value &&
     'set' in value &&
-    'prop' in value &&
     'map' in value
   )
 }
@@ -66,6 +164,10 @@ function assertItems<T>(items: T): ItemType<T>[] {
 
 function assertArray<T>(items: ItemType<T>[]): T {
   return (items as unknown) as T
+}
+
+function asItems<T>(): Glass<ItemType<T>[], T> {
+  return Glass(s => assertArray(s), s => assertItems(s))
 }
 
 function mapIfArray<T>(
@@ -83,198 +185,215 @@ function mapIfArray<T>(
   return assertArray(assertItems(items).map(fn))
 }
 
-function makeFrom<T>(source: T): From<T> {
-  return (Object.fromEntries(
-    Object.keys(source).map(key => [
-      key,
-      Glass<T>().prop((key as unknown) as keyof T),
-    ]),
-  ) as unknown) as From<T>
+function mapEntries<T, U>(
+  object: T,
+  fn: (value: T[keyof T], key: keyof T) => U,
+): [keyof T, U][] {
+  return Object.entries(object).map(([k, v]: any) => [k, fn(v, k)])
 }
 
-function Glass<S>(): Glass<S, S>
-function Glass<S, T>(get: Get<S, T>, put: Put<S, T>): Glass<S, T>
-function Glass<S, T>(config: (source: S) => [T, (other: T) => S]): Glass<S, T>
-function Glass<S, T>(glasses: Glass<S, T>[]): Glass<S, T[]>
+function flatMapEntries<T, U>(
+  object: T,
+  fn: (value: T[keyof T], key: keyof T) => U[],
+): U[] {
+  return Object.entries(object).flatMap(([k, v]: any) => fn(v, k))
+}
 
-function Glass<S, T>(
-  ...args:
-    | []
-    | [(source: S) => [T, (other: T) => S]]
-    | [Glass<S, T>[]]
-    | [Get<S, T>, Put<S, T>]
-): Glass<S, T | T[]> {
-  switch (args.length) {
-    case 2:
-      const [get, put] = args
-      const self: Glass<S, T> = {
-        get,
-        put,
-        of<U>(
-          ...ofArgs:
-            | [Get<U, S>, Put<U, S>]
-            | [Glass<U, S>]
-            | [Glass<U, ItemType<S>>[]]
-            | [S]
-            | [{ [K in keyof S]: Some<S[K] | Glass<U, S[K]>> }]
-        ) {
-          switch (ofArgs.length) {
-            case 2:
-              return Glass(...ofArgs)
-            case 1:
-              const [other] = ofArgs
-              if (isGlass(other)) {
-                return other.to(self)
-              } else if (Array.isArray(other)) {
-                return Glass(other)
-                  .to(s => assertArray(s), s => s)
-                  .to(self)
-              } else {
-                return Glass<any>()
-              }
-          }
-        },
-        from<U>(
-          fn:
-            | ((other: From<U>) => Glass<U, S>)
-            | ((other: From<U>) => Glass<U, ItemType<S>>[]),
-        ) {
-          return self.of<U>(
-            s => {
-              const gr = fn(makeFrom(s))
-              return Array.isArray(gr)
-                ? assertArray(gr.map(g => g.get(s)))
-                : gr.get(s)
-            },
-            (s, os) => {
-              const gr = fn(makeFrom(s))
-              return Array.isArray(gr)
-                ? gr.reduce((acc, g, i) => g.put(acc, assertItems(os)[i]), s)
-                : gr.put(s, os)
-            },
-          )
-        },
-        to<U>(
-          ...toArgs:
-            | [Get<T, U>, Put<T, U>]
-            | [Glass<T, U>]
-            | [(self: Glass<S, T>) => Glass<T, U>]
-            | [Glass<T, U>[]]
-            | [(self: Glass<S, T>) => Glass<T, U>[]]
-        ) {
-          switch (toArgs.length) {
-            case 2:
-              return Glass(...toArgs).of(self)
-            case 1:
-              const [other] = toArgs
-              if (isGlass(other)) {
-                return self.to(s => other.get(s), (s, u) => other.put(s, u))
-              } else if (Array.isArray(other)) {
-                return self.to(Glass(other))
-              } else {
-                const gr = other(self)
-                return Array.isArray(gr) ? self.to(gr) : self.to(gr)
-              }
-          }
-        },
-        for: () => Glass<any>(),
-        view: fn => self.to(fn, s => s),
-        update: fn => self.to(() => false, (s, o) => (o ? fn(s) : s)),
-        set: other => self.update(() => other),
-        prop: key => self.to(s => s[key], (s, o) => ({ ...s, [key]: o })),
-        map<U>(
-          other:
-            | Glass<ItemType<T>, U>
-            | ((self: Glass<S, T>) => Glass<ItemType<T>, U>),
-        ) {
-          if (typeof other === 'object') {
-            return self.to(
-              ss => mapIfArray(ss, other.get),
-              (ss, us) => mapIfArray(ss, (s, i) => other.put(s, us[i])),
-            )
-          } else {
-            return self.map(other(self))
-          }
-        },
-      }
-      return self
-    case 1:
-      if (Array.isArray(args[0])) {
-        const [glasses] = args
-        return Glass<S, T[]>(
-          s => glasses.map(g => g.get(s)),
-          (si, os) => glasses.reduce((s, g, i) => g.put(s, os[i]), si),
-        )
-      } else {
-        const [config] = args
-        return Glass<S, T>(s => config(s)[0], (s, o) => config(s)[1](o))
-      }
-    case 0:
-      const id = (s: S & T) => s
-      return Glass(id, id)
+function mapValues<T, U>(
+  obj: T,
+  fn: (value: T[keyof T], key: keyof T) => U,
+): { [K in keyof T]: U } {
+  return Object.fromEntries(mapEntries(obj, (v, k) => fn(v, k))) as any
+}
+
+function makeFrom<S>(source: S): From<S> {
+  const result = (mapValues(source, (_, key) =>
+    Glass<S>().at((key as unknown) as keyof S),
+  ) as unknown) as From<S>
+  return result
+}
+
+function trace<T>(value: T, message?: string): T {
+  if (message) {
+    console.log(message, value)
+  } else {
+    console.log(value)
+  }
+  return value
+}
+
+type VNode = {
+  node: Node
+  listening?: boolean
+  onevent?: () => void
+}
+
+function run<T>(view: Glass<T, VNode>, state: T, root: Node): void {
+  const vnode = view.get(state)
+  if (vnode.listening) {
+    Object.defineProperty(vnode, 'onevent', {
+      enumerable: true,
+      configurable: true,
+      get: () => () => {
+        const nextState = view.put(vnode, state)
+        console.log(state, nextState)
+        run(view, nextState, root)
+      },
+    })
+  }
+  if (root.childNodes.length === 1) {
+    reconcile(vnode.node, root.firstChild!)
+  } else {
+    while (root.firstChild) root.removeChild(root.firstChild)
+    root.appendChild(vnode.node)
+  }
+}
+
+function reconcile(source: Node, dest: ChildNode): void {
+  if (source === dest) return
+  if (
+    source.constructor === dest.constructor &&
+    source instanceof HTMLInputElement &&
+    dest instanceof HTMLInputElement &&
+    source.type === dest.type
+  ) {
+    dest.value = source.value
+  } else if (
+    source.constructor === dest.constructor &&
+    source instanceof HTMLDivElement &&
+    dest instanceof HTMLDivElement &&
+    source.childNodes.length === dest.childNodes.length
+  ) {
+    const nodePairs = []
+    for (let i = 0; i < source.childNodes.length; i++) {
+      nodePairs.push([source.childNodes[i], dest.childNodes[i]])
+    }
+    for (const [s, d] of nodePairs) {
+      reconcile(s, d)
+    }
+  } else if (
+    source instanceof HTMLButtonElement &&
+    dest instanceof HTMLButtonElement &&
+    source.childNodes.length === dest.childNodes.length
+  ) {
+    const nodePairs = []
+    for (let i = 0; i < source.childNodes.length; i++) {
+      nodePairs.push([source.childNodes[i], dest.childNodes[i]])
+    }
+    for (const [s, d] of nodePairs) {
+      reconcile(s, d)
+    }
+  } else {
+    dest.replaceWith(source.cloneNode(true))
   }
 }
 
 type ButtonConfig = { label: string; clicked: boolean }
-const Button = Glass<ButtonConfig>().view(({ label }) => {
-  const node = document.createElement('button')
-  node.append(label)
-  return node
-})
-
-const Div = Glass<Node[]>().view(
-  (children): Node => {
+const Button = Glass(
+  ({ label }: ButtonConfig): VNode => {
+    const node = document.createElement('button')
+    node.append(label)
+    const vnode: VNode = { node, listening: true }
+    node.onclick = () => {
+      node.value = 'clicked'
+      vnode.onevent && vnode.onevent()
+      node.removeAttribute('value')
+    }
+    return vnode
+  },
+  (o, s) => ({
+    ...s,
+    clicked: (o.node as HTMLButtonElement).value === 'clicked',
+  }),
+)
+const Div = Glass(
+  (children: VNode[]): VNode => {
     const node = document.createElement('div')
-    node.append(...children)
-    return node
+    node.append(...children.map(x => x.node))
+    const listeners = children.filter(x => x.listening)
+    if (listeners.length) {
+      const vnode: VNode = { node, listening: true }
+      for (const child of listeners) {
+        Object.defineProperty(child, 'onevent', {
+          enumerable: true,
+          configurable: true,
+          get: () => vnode.onevent,
+        })
+      }
+      return vnode
+    } else {
+      return { node }
+    }
   },
+  o => [...o.node.childNodes].map(node => ({ node })),
 )
-const Fragment = Glass<Node[]>().view(
-  (children): Node => {
-    const node = document.createDocumentFragment()
-    node.append(...children)
-    return node
-  },
-)
-const Input = Glass<string>().view(
-  (value): Node => {
+const Input = Glass(
+  (value: string): VNode => {
     const node = document.createElement('input')
     node.type = 'text'
     node.value = value
-    return node
+    const vnode: VNode = { node, listening: true }
+    node.oninput = () => {
+      vnode.onevent && vnode.onevent()
+    }
+    return vnode
   },
+  vnode => (vnode.node as HTMLInputElement).value,
 )
-const NumberInput = Glass<number>().view(
-  (value): Node => {
+const NumberInput = Glass(
+  (value: number): VNode => {
     const node = document.createElement('input')
     node.type = 'number'
     node.value = value.toString()
-    return node
+    const vnode: VNode = { node, listening: true }
+    node.oninput = () => {
+      vnode.onevent && vnode.onevent()
+    }
+    return vnode
+  },
+  (o, s) => {
+    const res = (o.node as HTMLInputElement).valueAsNumber
+    return res === null || isNaN(res) ? s : res
   },
 )
-const CheckBox = Glass<boolean>().view(
-  (checked): Node => {
+const CheckBox = Glass(
+  (checked: boolean): VNode => {
     const node = document.createElement('input')
     node.type = 'checkbox'
     node.checked = checked
-    return node
+    const vnode: VNode = { node, listening: true }
+    node.oninput = () => {
+      vnode.onevent && vnode.onevent()
+    }
+    return vnode
+  },
+  vnode => (vnode.node as HTMLInputElement).checked,
+)
+const Text = Glass<string>().view(
+  (content): VNode => {
+    const node = document.createElement('span')
+    node.append(content)
+    return { node }
   },
 )
-const Text = Glass<string | number>().view(
-  (content): Node => document.createTextNode(content.toString()),
+const Divider = Glass<any>().view(
+  (): VNode => ({ node: document.createElement('hr') }),
 )
-const Divider = Glass<never>().view((): Node => document.createElement('hr'))
-
-function run<T>(view: Glass<T, Node>, state: T, root: Node): void {
-  const node = view.get(state)
-  while (root.firstChild) root.removeChild(root.firstChild)
-  root.appendChild(node)
-}
+const Break = Glass<any>().view(
+  (): VNode => ({ node: document.createElement('br') }),
+)
+const Inspector = Glass<any>().view(
+  (s): VNode => {
+    const node = document.createElement('pre')
+    node.append(JSON.stringify(s, null, 2))
+    return { node }
+  },
+)
 
 type Root = {
+  name: string
   count: number
   changeBy: number
-  name: string
   todos: Todo[]
   url: string
 }
@@ -282,45 +401,89 @@ type Root = {
 type Todo = { content: string; done: boolean }
 
 const initialState: Root = {
+  name: 'world',
   count: 0,
   changeBy: 1,
-  name: '',
-  todos: [],
+  todos: [
+    { content: 'buy milk', done: false },
+    { content: 'buy eggs', done: true },
+  ],
   url: 'https://example.com',
 }
 
-const App = Div.from<Root>(({ count, changeBy, name, todos }) => [
-  Button.of({ label: '-', clicked: count.update(x => x - 1) }),
-  Text.of(count),
-  Button.of({ label: '+', clicked: count.update(x => x + 1) }),
-  Button.of({ label: 'reset', clicked: [count.set(0), changeBy.set(1)] }),
+const App = Div.of<Root>(({ count, changeBy, name, todos }) => [
+  Text.of('fowards: '),
+  Input.of(name),
+  Break,
+  Text.of('backwards: '),
+  Input.of(
+    name.to(
+      x =>
+        x
+          .split('')
+          .reverse()
+          .join(''),
+      x =>
+        x
+          .split('')
+          .reverse()
+          .join(''),
+    ),
+  ),
+  Break,
+  Text.of(name.view(x => `Hello, ${x}`)),
+  Break,
+  Text.of(name.view(x => x.toUpperCase())),
+
+  Divider,
+
+  Button.of({ label: '-', clicked: count.update(x => trace(x, '-') - 1) }),
+  Text.of(count.view(x => `${x}`)),
+  Button.of({ label: '+', clicked: count.update(x => trace(x, '+') + 1) }),
+  Break,
+  Button.of({ label: 'reset', clicked: count.set(0) }),
+  Break,
   Text.of('what to change count by'),
+  Break,
   NumberInput.of(changeBy),
 
   Divider,
 
-  Text.of('type your name'),
-  Input.of(name),
-  Text.of(name.view(x => `Hello, ${x}`)),
-
-  Divider,
-
+  Text.of(todos.view(x => `${x.filter(y => !y.done).length} todo`)),
+  Break,
+  Text.of(todos.view(x => `${x.filter(y => y.done).length} done`)),
+  Break,
   todos
     .map(
-      Div.from(({ content, done }) => [
+      Div.of(({ content, done }) => [
         Input.of(content),
         CheckBox.of(done),
-        Button.of({ label: 'remove (unimplimented)', clicked: false }),
+        Button.of({ label: 'remove (not working)', clicked: false }),
       ]),
     )
-    .to(Fragment),
+    .to(Div),
   Button.of({
     label: 'new todo',
     clicked: todos.update(xs => [...xs, { content: '', done: false }]),
   }),
   Button.of({ label: 'clear', clicked: todos.set([]) }),
+
+  Divider,
+  Inspector,
 ])
 
-console.log(App)
+const root = document.getElementById('app')!
+// run(App, initialState, root)
+run(
+  Div.of([
+    Button.of({
+      label: 'click me',
+      clicked: Glass<number>().update(x => x + 1),
+    }),
+    Inspector,
+  ]),
+  3,
+  root,
+)
 
-run(App, initialState, document.getElementById('app')!)
+// module.hot && module.hot.accept()
