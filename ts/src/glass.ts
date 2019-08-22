@@ -1,4 +1,6 @@
-export type Glass<S, T> = {
+import 'babel-polyfill'
+
+type Glass<S, T> = {
   get(source: S): T
   put(other: T, source: S): S
 
@@ -17,11 +19,14 @@ export type Glass<S, T> = {
 
   view<U>(fn: (other: T) => U): Glass<S, U>
 
-  update(fn: (other: T) => T): Glass<S, boolean>
+  update(fn: (value: T) => T): Glass<S, boolean>
+  update<U>(
+    other: Glass<S, U>,
+    fn: (value: T, other: U) => T,
+  ): Glass<S, boolean>
   set(other: T): Glass<S, boolean>
 
   map<U>(other: Glass<ItemType<T>, U>): Glass<S, U[]>
-  map<U>(fn: (self: Glass<S, T>) => Glass<ItemType<T>, U>): Glass<S, U[]>
 }
 
 function Glass<S>(): Glass<S, S>
@@ -91,10 +96,10 @@ function Glass<S, T>(
         ): Glass<S, U> {
           switch (toArgs.length) {
             case 2:
-              const glass = Glass(...toArgs)
+              const [get, put] = toArgs
               return Glass(
-                (s: S) => glass.get(self.get(s)),
-                (o, s) => self.put(glass.put(o, self.get(s)), s),
+                (s: S) => get(self.get(s)),
+                (o, s) => self.put(put(o, self.get(s)), s),
               )
             case 1:
               const [other] = toArgs
@@ -107,22 +112,31 @@ function Glass<S, T>(
         },
         at: key => self.to(s => s[key], (o, s) => ({ ...s, [key]: o })),
         view: fn => self.to(fn, (_, s) => s),
-        update: fn => self.to(() => false, (o, s) => (o ? fn(s) : s)),
-        set: other => self.update(() => other),
-        map<U>(
-          other:
-            | Glass<ItemType<T>, U>
-            | ((self: Glass<S, T>) => Glass<ItemType<T>, U>),
-        ): Glass<S, U[]> {
-          if (typeof other === 'object') {
-            return self.to(
-              ss => mapIfArray(ss, other.get),
-              (us, ss) => mapIfArray(ss, (s, i) => other.put(us[i], s)),
-            )
+        update<U>(
+          ...updateArgs:
+            | [(value: T) => T]
+            | [Glass<S, U>, (value: T, other: U) => T]
+        ) {
+          if (updateArgs.length === 1) {
+            const [fn] = updateArgs
+            return self.to(() => false, (o, s) => (o ? fn(s) : s))
           } else {
-            return self.map(other(self))
+            const [other, fn] = updateArgs
+            return Glass<S, boolean>(
+              () => false,
+              (o, s) => (o ? self.put(fn(self.get(s), other.get(s)), s) : s),
+            )
           }
         },
+        set: other => self.update(() => other),
+        map: other =>
+          self
+            .to(asArray())
+            .to(
+              ss => ss.map(other.get),
+              (us, ss) => ss.map((s, i) => other.put(us[i], s)),
+            )
+            .to(asItems()),
       }
       return self
     case 1:
@@ -166,23 +180,12 @@ function assertArray<T>(items: ItemType<T>[]): T {
   return (items as unknown) as T
 }
 
-function asItems<T>(): Glass<ItemType<T>[], T> {
-  return Glass(s => assertArray(s), s => assertItems(s))
+function asArray<T>(): Glass<T, ItemType<T>[]> {
+  return Glass(s => assertItems(s), s => assertArray(s))
 }
 
-function mapIfArray<T>(
-  items: T,
-  fn: (value: ItemType<T>, index: number) => ItemType<T>,
-): T
-function mapIfArray<T, U>(
-  items: T,
-  fn: (value: ItemType<T>, index: number) => U,
-): U[]
-function mapIfArray<T>(
-  items: T,
-  fn: (value: ItemType<T>, index: number) => ItemType<T>,
-): T {
-  return assertArray(assertItems(items).map(fn))
+function asItems<T>(): Glass<ItemType<T>[], T> {
+  return Glass(s => assertArray(s), s => assertItems(s))
 }
 
 function mapEntries<T, U>(
@@ -213,181 +216,150 @@ function makeFrom<S>(source: S): From<S> {
   return result
 }
 
-function trace<T>(value: T, message?: string): T {
-  if (message) {
-    console.log(message, value)
-  } else {
-    console.log(value)
-  }
-  return value
+function trace<T>(value: T): T
+function trace<T>(message: any, value: T): T
+function trace<T>(...args: [T] | [any, T]): T {
+  console.log(...args)
+  return args[args.length - 1]
 }
 
-type VNode = {
-  node: Node
-  listening?: boolean
-  onevent?: () => void
+type VNode =
+  | { tag: 'div'; children: VNode[] }
+  | { tag: 'text'; text: string }
+  | { tag: 'button'; label: string; clicked: boolean }
+  | { tag: 'input'; text: string }
+  | { tag: 'numberinput'; value: number }
+  | { tag: 'checkbox'; checked: boolean }
+  | { tag: 'divider' }
+  | { tag: 'break' }
+  | { tag: 'pre'; text: string }
+
+async function run<T>(
+  view: Glass<T, VNode>,
+  state: T,
+  root: ChildNode,
+): Promise<void> {
+  while (root.childNodes.length > 1) root.lastChild!.remove()
+  const dest = root.firstChild || document.createElement('div')
+  if (root.firstChild !== dest) root.appendChild(dest)
+
+  do {
+    const node = view.get(state)
+    const nextNode = await reconcile(node, dest)
+    state = view.put(nextNode, state)
+  } while (true)
 }
 
-function run<T>(view: Glass<T, VNode>, state: T, root: Node): void {
-  const vnode = view.get(state)
-  if (vnode.listening) {
-    Object.defineProperty(vnode, 'onevent', {
-      enumerable: true,
-      configurable: true,
-      get: () => () => {
-        const nextState = view.put(vnode, state)
-        console.log(state, nextState)
-        run(view, nextState, root)
-      },
-    })
-  }
-  if (root.childNodes.length === 1) {
-    reconcile(vnode.node, root.firstChild!)
-  } else {
-    while (root.firstChild) root.removeChild(root.firstChild)
-    root.appendChild(vnode.node)
-  }
-}
+function reconcile(source: VNode, dest: ChildNode): Promise<VNode> {
+  return new Promise(async resolve => {
+    if (source.tag === 'div') {
+      const size = source.children.length
+      const el =
+        dest instanceof HTMLDivElement ? dest : document.createElement('div')
+      if (el !== dest) dest.replaceWith(el)
+      while (el.childNodes.length > size) el.lastChild!.remove()
+      while (el.childNodes.length < size)
+        el.appendChild(document.createElement('div'))
 
-function reconcile(source: Node, dest: ChildNode): void {
-  if (source === dest) return
-  if (
-    source.constructor === dest.constructor &&
-    source instanceof HTMLInputElement &&
-    dest instanceof HTMLInputElement &&
-    source.type === dest.type
-  ) {
-    dest.value = source.value
-  } else if (
-    source.constructor === dest.constructor &&
-    source instanceof HTMLDivElement &&
-    dest instanceof HTMLDivElement &&
-    source.childNodes.length === dest.childNodes.length
-  ) {
-    const nodePairs = []
-    for (let i = 0; i < source.childNodes.length; i++) {
-      nodePairs.push([source.childNodes[i], dest.childNodes[i]])
-    }
-    for (const [s, d] of nodePairs) {
-      reconcile(s, d)
-    }
-  } else if (
-    source instanceof HTMLButtonElement &&
-    dest instanceof HTMLButtonElement &&
-    source.childNodes.length === dest.childNodes.length
-  ) {
-    const nodePairs = []
-    for (let i = 0; i < source.childNodes.length; i++) {
-      nodePairs.push([source.childNodes[i], dest.childNodes[i]])
-    }
-    for (const [s, d] of nodePairs) {
-      reconcile(s, d)
-    }
-  } else {
-    dest.replaceWith(source.cloneNode(true))
-  }
-}
-
-type ButtonConfig = { label: string; clicked: boolean }
-const Button = Glass(
-  ({ label }: ButtonConfig): VNode => {
-    const node = document.createElement('button')
-    node.append(label)
-    const vnode: VNode = { node, listening: true }
-    node.onclick = () => {
-      node.value = 'clicked'
-      vnode.onevent && vnode.onevent()
-      node.removeAttribute('value')
-    }
-    return vnode
-  },
-  (o, s) => ({
-    ...s,
-    clicked: (o.node as HTMLButtonElement).value === 'clicked',
-  }),
-)
-const Div = Glass(
-  (children: VNode[]): VNode => {
-    const node = document.createElement('div')
-    node.append(...children.map(x => x.node))
-    const listeners = children.filter(x => x.listening)
-    if (listeners.length) {
-      const vnode: VNode = { node, listening: true }
-      for (const child of listeners) {
-        Object.defineProperty(child, 'onevent', {
-          enumerable: true,
-          configurable: true,
-          get: () => vnode.onevent,
-        })
+      const { child, index } = await Promise.race(
+        source.children.map(async (child, index) => ({
+          child: await reconcile(child, el.childNodes[index]),
+          index,
+        })),
+      )
+      resolve({
+        ...source,
+        children: Object.assign([], source.children, { [index]: child }),
+      })
+    } else if (source.tag === 'text') {
+      if (dest.nodeType !== Node.TEXT_NODE) {
+        dest.replaceWith(source.text)
+      } else {
+        if (dest.textContent !== source.text) dest.textContent = source.text
       }
-      return vnode
-    } else {
-      return { node }
+    } else if (source.tag === 'button') {
+      const el =
+        dest instanceof HTMLButtonElement
+          ? dest
+          : document.createElement('button')
+      if (el !== dest) {
+        dest.replaceWith(el)
+      }
+      el.textContent = source.label
+      el.onclick = () => resolve({ ...source, clicked: true })
+    } else if (source.tag === 'input') {
+      const el =
+        dest instanceof HTMLInputElement && dest.type === 'text'
+          ? dest
+          : document.createElement('input')
+      if (el !== dest) {
+        dest.replaceWith(el)
+        el.type = 'text'
+      }
+      el.value = source.text
+      el.oninput = () => resolve({ ...source, text: el.value })
+    } else if (source.tag === 'numberinput') {
+      const el =
+        dest instanceof HTMLInputElement && dest.type === 'number'
+          ? dest
+          : document.createElement('input')
+      if (el !== dest) {
+        dest.replaceWith(el)
+        el.type = 'number'
+      }
+      el.valueAsNumber = source.value
+      el.oninput = () => resolve({ ...source, value: el.valueAsNumber || 0 })
+    } else if (source.tag === 'checkbox') {
+      const el =
+        dest instanceof HTMLInputElement && dest.type === 'checkbox'
+          ? dest
+          : document.createElement('input')
+      if (el !== dest) {
+        dest.replaceWith(el)
+        el.type = 'checkbox'
+      }
+      el.checked = source.checked
+      el.oninput = () => resolve({ ...source, checked: el.checked })
+    } else if (source.tag === 'pre') {
+      const el =
+        dest instanceof HTMLPreElement ? dest : document.createElement('pre')
+      if (el !== dest) dest.replaceWith(el)
+      if (el.textContent !== source.text) el.textContent = source.text
+    } else if (source.tag === 'divider') {
+      if (!(dest instanceof HTMLHRElement))
+        dest.replaceWith(document.createElement('hr'))
+    } else if (source.tag === 'break') {
+      if (!(dest instanceof HTMLBRElement))
+        dest.replaceWith(document.createElement('br'))
     }
-  },
-  o => [...o.node.childNodes].map(node => ({ node })),
+  })
+}
+
+const Div = Glass<VNode[], VNode>(
+  children => ({ tag: 'div', children }),
+  o => (o.tag === 'div' ? o.children : []),
 )
-const Input = Glass(
-  (value: string): VNode => {
-    const node = document.createElement('input')
-    node.type = 'text'
-    node.value = value
-    const vnode: VNode = { node, listening: true }
-    node.oninput = () => {
-      vnode.onevent && vnode.onevent()
-    }
-    return vnode
-  },
-  vnode => (vnode.node as HTMLInputElement).value,
+const Text = Glass<string>().view<VNode>(text => ({ tag: 'text', text }))
+const Button = Glass<{ label: string; clicked: boolean }, VNode>(
+  s => ({ tag: 'button', ...s, clicked: false }),
+  (o, s) => ({ ...s, clicked: o.tag === 'button' ? o.clicked : false }),
 )
-const NumberInput = Glass(
-  (value: number): VNode => {
-    const node = document.createElement('input')
-    node.type = 'number'
-    node.value = value.toString()
-    const vnode: VNode = { node, listening: true }
-    node.oninput = () => {
-      vnode.onevent && vnode.onevent()
-    }
-    return vnode
-  },
-  (o, s) => {
-    const res = (o.node as HTMLInputElement).valueAsNumber
-    return res === null || isNaN(res) ? s : res
-  },
+const Input = Glass<string, VNode>(
+  text => ({ tag: 'input', text }),
+  o => (o.tag === 'input' ? o.text : ''),
 )
-const CheckBox = Glass(
-  (checked: boolean): VNode => {
-    const node = document.createElement('input')
-    node.type = 'checkbox'
-    node.checked = checked
-    const vnode: VNode = { node, listening: true }
-    node.oninput = () => {
-      vnode.onevent && vnode.onevent()
-    }
-    return vnode
-  },
-  vnode => (vnode.node as HTMLInputElement).checked,
+const NumberInput = Glass<number, VNode>(
+  value => ({ tag: 'numberinput', value }),
+  o => (o.tag === 'numberinput' ? o.value : 0),
 )
-const Text = Glass<string>().view(
-  (content): VNode => {
-    const node = document.createElement('span')
-    node.append(content)
-    return { node }
-  },
+const CheckBox = Glass<boolean, VNode>(
+  checked => ({ tag: 'checkbox', checked }),
+  o => (o.tag === 'checkbox' ? o.checked : false),
 )
-const Divider = Glass<any>().view(
-  (): VNode => ({ node: document.createElement('hr') }),
-)
-const Break = Glass<any>().view(
-  (): VNode => ({ node: document.createElement('br') }),
-)
-const Inspector = Glass<any>().view(
-  (s): VNode => {
-    const node = document.createElement('pre')
-    node.append(JSON.stringify(s, null, 2))
-    return { node }
-  },
+const Divider = Glass<any>().view<VNode>(() => ({ tag: 'divider' }))
+const Break = Glass<any>().view<VNode>(() => ({ tag: 'break' }))
+const Inspector = Glass<any>().view<VNode>(
+  (s): VNode => ({ tag: 'pre', text: JSON.stringify(s, null, 2) }),
 )
 
 type Root = {
@@ -437,9 +409,15 @@ const App = Div.of<Root>(({ count, changeBy, name, todos }) => [
 
   Divider,
 
-  Button.of({ label: '-', clicked: count.update(x => trace(x, '-') - 1) }),
+  Button.of({
+    label: '-',
+    clicked: count.update(changeBy, (x, a) => x - a),
+  }),
   Text.of(count.view(x => `${x}`)),
-  Button.of({ label: '+', clicked: count.update(x => trace(x, '+') + 1) }),
+  Button.of({
+    label: '+',
+    clicked: count.update(changeBy, (x, a) => x + a),
+  }),
   Break,
   Button.of({ label: 'reset', clicked: count.set(0) }),
   Break,
@@ -473,17 +451,6 @@ const App = Div.of<Root>(({ count, changeBy, name, todos }) => [
 ])
 
 const root = document.getElementById('app')!
-// run(App, initialState, root)
-run(
-  Div.of([
-    Button.of({
-      label: 'click me',
-      clicked: Glass<number>().update(x => x + 1),
-    }),
-    Inspector,
-  ]),
-  3,
-  root,
-)
+run(App, initialState, root)
 
 // module.hot && module.hot.accept()
