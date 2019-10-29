@@ -6,3 +6,4 @@
 /.purs*
 /.psa*
 /bower_components
+/.spago
