@@ -403,7 +403,4 @@ export namespace Test {
     : T extends (infer U)[]
     ? ModelInstance<InstanceType<U>>[]
     : ModelInstance<InstanceType<T>>
-
-  declare const school: ModelInstance<School>
-  school.courses[0].projects[0].name
 }
