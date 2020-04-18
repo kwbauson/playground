@@ -1,51 +1,43 @@
 export class Lens<S, A> {
-  constructor(public lensFn: LensFn<S, A>) {
-    this.lensFn = s => {
-      const [a, as] = lensFn(s)
-      return [a, a2 => (a2 === a ? s : as(a2))]
-    }
+  constructor(public get: Fun<[S], A>, public put: Fun<[A, S], S>) {}
+
+  static identity = new Lens(
+    x => x,
+    x => x,
+  )
+
+  to<B>(get: Fun<[A], B>, put: Fun<[B, A], A>): Lens<S, B>
+  to<B>(lensable: Lensable<A, B, S, A>): Lens<S, B>
+  to<B>(...args: MkLensArgs<A, B, S, A>): Lens<S, B> {
+    const other = mkLens(...(args as MkLensArgs<A, B>))
+    return new Lens<S, B>(
+      s => other.get(this.get(s)),
+      (b, s) => this.put(other.put(b, this.get(s)), s),
+    )
   }
 
-  static identity = new Lens(s => [s, s2 => s2])
-
-  toLens<B>(lensFn: LensFn<A, B>): Lens<S, B> {
-    return new Lens(s => {
-      const [a, as] = this.lensFn(s)
-      const [b, ba] = lensFn(a)
-      return [b, b2 => as(ba(b2))]
-    })
+  of<T>(get: Fun<[T], S>, put: Fun<[S, T], T>): Lens<T, A>
+  of<T>(lensable: Lensable<T, S, A, S>): Lens<T, A>
+  of<T>(...args: MkLensArgs<T, S, A, S>): Lens<T, A> {
+    return mkLens(...(args as MkLensArgs<T, S>)).to(this)
   }
 
-  ofLens<T>(lensFn: LensFn<T, S>): Lens<T, A> {
-    return new Lens(lensFn).to(this)
+  view<B>(fn: Fun<[A], B>): Lens<S, B> {
+    return this.to(
+      a => fn(a),
+      (_, a) => a,
+    )
   }
 
-  toIso<B>(get: Fn<A, B>, set: Fn<B, A>): Lens<S, B> {
-    return this.toLens(a => [get(a), set])
+  involute(fn: Fun<[A], A>): Lens<S, A> {
+    return this.to(fn, fn)
   }
 
-  ofIso<T>(get: Fn<T, S>, set: Fn<S, T>): Lens<T, A> {
-    return this.ofLens(t => [get(t), set])
-  }
-
-  to<B>(lensable: Lensable<A, B, S, A>): Lens<S, B> {
-    return this.toLens(lens<A, B>(lensable as any).lensFn)
-  }
-
-  of<T>(lensable: Lensable<T, S, A, S>): Lens<T, A> {
-    return lens<T, S>(lensable as any).to(this)
-  }
-
-  view<B>(fn: Fn<A, B>): Lens<S, B> {
-    return this.toLens(s => [fn(s), () => s])
-  }
-
-  involute(fn: Fn<A, A>): Lens<S, A> {
-    return this.toIso(fn, fn)
-  }
-
-  update(fn: Fn<A, A>): Lens<S, boolean> {
-    return this.toLens(a => [false as boolean, b => (b ? fn(a) : a)])
+  update(fn: Fun<[A], A>): Lens<S, boolean> {
+    return this.to(
+      () => false as boolean,
+      (b, a) => (b ? fn(a) : a),
+    )
   }
 
   set(value: A): Lens<S, boolean> {
@@ -53,60 +45,69 @@ export class Lens<S, A> {
   }
 
   pick<KS extends (keyof A)[]>(keys: KS): Lens<S, Pick<A, KS[number]>> {
-    return this.toLens(a => [pick(a, keys), b => ({ ...a, ...b })])
+    return this.to(
+      a => pick(a, keys),
+      (b, a) => ({ ...a, ...b }),
+    )
   }
 
   omit<KS extends (keyof A)[]>(keys: KS): Lens<S, Omit<A, KS[number]>> {
-    return this.toLens(a => [omit(a, keys), b => ({ ...a, ...b })])
+    return this.to(
+      a => omit(a, keys),
+      (a, b) => ({ ...a, ...b }),
+    )
   }
 
   map<B>(_lensable: Lensable<ValueType<A>, B, ValueType<A>, B>): Lens<S, B> {
-    return lens<any>()
+    return mkLens<any>()
   }
 
   filter(
     _lensable: Lensable<ValueType<A>, boolean, ValueType<A>, boolean>,
   ): Lens<S, A> {
-    return lens<any>()
+    return mkLens<any>()
   }
 
   reject(
     lensable: Lensable<ValueType<A>, boolean, ValueType<A>, boolean>,
   ): Lens<S, A> {
-    return this.filter(lens(lensable as any).view(x => !x))
+    return this.filter(mkLens(lensable as any).view(x => !x))
   }
 
   override<T extends Partial<S>>(
     _lensable: Lensable<S, T, S, T>,
   ): Lens<Diff<S, T>, A> {
-    return lens<any>()
+    return mkLens<any>()
   }
 
   default<T extends Partial<S>>(
     _lensable: Lensable<S, T, S, T>,
   ): Lens<Diff<S, T> & Partial<Common<S, T>>, A> {
-    return lens<any>()
+    return mkLens<any>()
   }
 
   get source(): Lens<S, A extends any ? { [K in keyof Choice<A>]: S } : never> {
-    return lens<any>()
+    return mkLens<any>()
   }
 
   get remove(): Lens<S, boolean> {
-    return lens<S, boolean>(false)
+    return mkLens<S, boolean>(false)
   }
 
   at: { [K in keyof Record<A>]: Lens<S, Record<A>[K]> } = getProxy(key =>
-    this.toLens((a: any) => [a[key], ak => ({ ...a, [key]: ak })]),
+    this.to(
+      (a: any) => a[key],
+      (ak, a) => ({ ...a, [key]: ak }),
+    ),
   )
 
   choices: {
     [K in keyof Choice<S>]: Lens<Choice<S>[K], A>
   } = getProxy(key =>
-    this.ofLens(ak => [
-      { [key]: ak } as any,
-      (s: any) => (key in s ? s[key] : ak),
-    ]),
+    this.of(
+      ak => ({ [key]: ak } as any),
+      (s: any, ak) => (key in s ? s[key] : ak),
+    ),
   )
 }
 
@@ -185,7 +186,8 @@ type ChoiceType<T> = string extends T
   ? 'false'
   : never
 
-type Fn<A, B> = (_: A) => B
+type Fn<A, B> = (_1: A) => B
+type Fun<Args extends unknown[], Result> = (...args: Args) => Result
 type Intersect<T> = (T extends any ? Fn<T, void> : never) extends Fn<
   infer I,
   void
@@ -203,12 +205,15 @@ type Diff<T, U> = IfEq<keyof T, keyof U, {}, Omit<T, keyof U>>
 type Common<T, U> = Pick<T, Extract<keyof T, keyof U>>
 type IfEq<T, U, A, B> = [T] extends [U] ? ([U] extends [T] ? A : B) : B
 
-export function lens<S>(): Lens<S, S>
-export function lens<S, A>(
-  lensable: Lensable<S, A, unknown, unknown>,
+export type MkLensArgs<S, A, T = unknown, B = unknown> =
+  | [Fun<[S], A>, Fun<[A, S], S>]
+  | [Lensable<S, A, T, B>]
+export function mkLens<S>(): Lens<S, S>
+export function mkLens<S, A>(
+  ...args: MkLensArgs<S, A, unknown, unknown>
 ): Lens<S, A>
-export function lens<S, A, T, B>(
-  ...args: [] | [Lensable<S, A, T, B>]
+export function mkLens<S, A, T, B>(
+  ...args: [] | MkLensArgs<S, A, T, B>
 ): Lens<S, S> | Lens<S, A> {
   if (args.length === 0) {
     return Lens.identity as Lens<S, S>
@@ -218,9 +223,9 @@ export function lens<S, A, T, B>(
       return lensable as Lens<S, A>
     } else if (typeof lensable === 'function') {
       const lensableFn = lensable as any // Fn<Lens<T, S>, Lensable<S, A, T, B>>
-      return lens(lensableFn(lens())) as any
+      return mkLens(lensableFn(mkLens())) as any
     } else {
-      return lens<any>()
+      return mkLens<any>()
     }
   }
 }
@@ -252,9 +257,9 @@ export const {
   Break,
   Divider,
   Radio,
-} = lens<VNode>().choices
+} = mkLens<VNode>().choices
 
-export const Inspect = lens()
+export const Inspect = mkLens()
   .view(x => JSON.stringify(x, null, 2))
   .to(Pre)
 
@@ -288,7 +293,7 @@ type RemoteResponse<T, E = string> =
 
 export declare const Fetch: <T>() => Lens<RemoteData<T>, boolean>
 
-export const App = lens<App>()
+export const App = mkLens<App>()
   .default({
     name: '',
     firstName: '',
