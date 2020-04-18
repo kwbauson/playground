@@ -186,9 +186,10 @@ type ChoiceType<T> = string extends T
   : never
 
 type Fn<A, B> = (_: A) => B
-type Intersect<T> = (T extends any
-? Fn<T, void>
-: never) extends Fn<infer I, void>
+type Intersect<T> = (T extends any ? Fn<T, void> : never) extends Fn<
+  infer I,
+  void
+>
   ? I
   : never
 type ValueOf<T> = T[keyof T]
@@ -304,12 +305,7 @@ export const App = lens<App>()
         InlineText.of('Hello,'),
         InlineText.of(
           reversed.source.to({
-            true: name.involute(x =>
-              x
-                .split('')
-                .reverse()
-                .join(''),
-            ),
+            true: name.involute(x => x.split('').reverse().join('')),
             false: name,
           }),
         ),
