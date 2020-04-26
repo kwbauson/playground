@@ -1,12 +1,12 @@
 export class Lens<S, A> {
-  constructor(public get: Fun<[S], A>, public put: Fun<[A, S], S>) {}
+  constructor(public get: Fn<[S], A>, public put: Fn<[A, S], S>) {}
 
   static identity = new Lens(
     x => x,
     x => x,
   )
 
-  to<B>(get: Fun<[A], B>, put: Fun<[B, A], A>): Lens<S, B>
+  to<B>(get: Fn<[A], B>, put: Fn<[B, A], A>): Lens<S, B>
   to<B>(lensable: Lensable<A, B, S, A>): Lens<S, B>
   to<B>(...args: MkLensArgs<A, B, S, A>): Lens<S, B> {
     const other = mkLens(...(args as MkLensArgs<A, B>))
@@ -16,24 +16,24 @@ export class Lens<S, A> {
     )
   }
 
-  of<T>(get: Fun<[T], S>, put: Fun<[S, T], T>): Lens<T, A>
+  of<T>(get: Fn<[T], S>, put: Fn<[S, T], T>): Lens<T, A>
   of<T>(lensable: Lensable<T, S, A, S>): Lens<T, A>
   of<T>(...args: MkLensArgs<T, S, A, S>): Lens<T, A> {
     return mkLens(...(args as MkLensArgs<T, S>)).to(this)
   }
 
-  view<B>(fn: Fun<[A], B>): Lens<S, B> {
+  view<B>(fn: Fn<[A], B>): Lens<S, B> {
     return this.to(
       a => fn(a),
       (_, a) => a,
     )
   }
 
-  involute(fn: Fun<[A], A>): Lens<S, A> {
+  involute(fn: Fn<[A], A>): Lens<S, A> {
     return this.to(fn, fn)
   }
 
-  update(fn: Fun<[A], A>): Lens<S, boolean> {
+  update(fn: Fn<[A], A>): Lens<S, boolean> {
     return this.to(
       () => false as boolean,
       (b, a) => (b ? fn(a) : a),
@@ -54,7 +54,7 @@ export class Lens<S, A> {
   omit<KS extends (keyof A)[]>(keys: KS): Lens<S, Omit<A, KS[number]>> {
     return this.to(
       a => omit(a, keys),
-      (a, b) => ({ ...a, ...b }),
+      (b, a) => ({ ...a, ...b }),
     )
   }
 
@@ -145,7 +145,6 @@ function omit<T, KS extends (keyof T)[]>(
   return result
 }
 
-export type LensFn<S, A> = Fn<S, [A, Fn<A, S>]>
 export type Lensable<S, A, T, B> =
   | Lens<S, A>
   | Lens<undefined, A>
@@ -163,10 +162,10 @@ type ToNested<S, A, T, B> = UnlessLensable<
   { [K in keyof A]: Lensable<S, A[K], T, B> }
 >
 type UnlessLensable<T, U> = [T] extends [Lens<any, any> | Function] ? never : U
-type Record<T> = keyof T extends never
+export type Record<T> = keyof T extends never
   ? never
   : Exclude<Extract<T, object>, Function>
-type Choice<T> = NotUnknown<Intersect<T extends any ? Single<T> : never>>
+export type Choice<T> = NotUnknown<Intersect<T extends any ? Single<T> : never>>
 type Single<T> = ChoiceType<T> extends never
   ? Intersect<keyof T> extends never
     ? unknown
@@ -186,27 +185,26 @@ type ChoiceType<T> = string extends T
   ? 'false'
   : never
 
-type Fn<A, B> = (_1: A) => B
-type Fun<Args extends unknown[], Result> = (...args: Args) => Result
-type Intersect<T> = (T extends any ? Fn<T, void> : never) extends Fn<
-  infer I,
+export type Fn<Args extends unknown[], Result> = (...args: Args) => Result
+export type Intersect<T> = (T extends any ? Fn<[T], void> : never) extends Fn<
+  [infer I],
   void
 >
   ? I
   : never
-type ValueOf<T> = T[keyof T]
-type ValueType<T> = [T] extends [(infer U)[]]
+export type ValueOf<T> = T[keyof T]
+export type ValueType<T> = [T] extends [(infer U)[]]
   ? U
   : [T] extends [{ [_ in any]: infer U }]
   ? U
   : never
 type NotUnknown<T> = [unknown] extends [T] ? never : T
-type Diff<T, U> = IfEq<keyof T, keyof U, {}, Omit<T, keyof U>>
-type Common<T, U> = Pick<T, Extract<keyof T, keyof U>>
+export type Diff<T, U> = IfEq<keyof T, keyof U, {}, Omit<T, keyof U>>
+export type Common<T, U> = Pick<T, Extract<keyof T, keyof U>>
 type IfEq<T, U, A, B> = [T] extends [U] ? ([U] extends [T] ? A : B) : B
 
 export type MkLensArgs<S, A, T = unknown, B = unknown> =
-  | [Fun<[S], A>, Fun<[A, S], S>]
+  | [Fn<[S], A>, Fn<[A, S], S>]
   | [Lensable<S, A, T, B>]
 export function mkLens<S>(): Lens<S, S>
 export function mkLens<S, A>(
