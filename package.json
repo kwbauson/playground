@@ -7,7 +7,7 @@
     "fp-ts": "^2.5.3",
     "inflected": "^2.0.4",
     "io-ts": "^2.2.0",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.19",
     "mobx": "^5.15.4",
     "mobx-react": "^6.2.2",
     "mobx-state-tree": "3.16.0",
