@@ -2,24 +2,24 @@
   "name": "playground",
   "version": "1.0.0",
   "dependencies": {
+    "@types/webpack-env": "^1.15.2",
     "babel-polyfill": "6.26.0",
     "inflected": "2.0.4",
     "react": "16.13.1",
     "react-dom": "16.13.1",
     "shades": "2.1.0",
     "shortid": "2.2.15",
-    "ts-morph": "7.0.2",
-    "tslib": "1.11.1"
+    "ts-morph": "7.1.1",
+    "tslib": "2.0.0"
   },
   "devDependencies": {
     "@types/inflected": "1.1.29",
-    "@types/node": "13.13.2",
-    "@types/react": "16.9.34",
-    "@types/react-dom": "16.9.6",
+    "@types/node": "14.0.13",
+    "@types/react": "16.9.36",
+    "@types/react-dom": "16.9.8",
     "@types/shortid": "0.0.29",
     "fuse-box": "4.0.0-next.165",
-    "ts-node": "8.9.0",
-    "ts-node-dev": "1.0.0-pre.44",
-    "typescript": "3.8.3"
+    "parcel-bundler": "^1.12.4",
+    "typescript": "3.9.5"
   }
 }

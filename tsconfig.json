@@ -6,12 +6,9 @@
     "skipLibCheck": true,
     "allowJs": false,
     "jsx": "react",
-    "importHelpers": true,
     "strict": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "esModuleInterop": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "esModuleInterop": true
   }
 }
