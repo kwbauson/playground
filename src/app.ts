@@ -24,18 +24,21 @@ export type Optical<S, A> =
   | Optic<S, A>
   | Exclude<A, object | Function | Optic<any, any>>
   | ((attrs: { [K in keyof A]: Optic<S, A[K]> }) => Optical<S, A>)
-  | { [K in keyof A]: Optical<S, A> }
+  | { [K in keyof Record<A>]: Optical<S, Record<A>[K]> }
+  | NotEmpty<{ [K in keyof Choice<S>]: Optical<Choice<S>[K], A> }>
 
 export declare function optic<S>(): Optic<S, S>
 
 export type Record<T> = keyof T extends never
   ? never
   : Exclude<Extract<T, object>, Function>
-export type Choice<T> = NotUnknown<Intersect<T extends any ? Single<T> : never>>
+export type Choice<T> = Intersect<T extends any ? Single<T> : never>
 type Single<T> = ChoiceType<T> extends never
   ? Intersect<keyof T> extends never
-    ? unknown
+    ? never
     : T
+  : {} extends T
+  ? never
   : { [K in ChoiceType<T>]: undefined }
 type ChoiceType<T> = string extends T
   ? never
@@ -51,13 +54,16 @@ type ChoiceType<T> = string extends T
   ? 'false'
   : never
 
+export type NotEmpty<T> = {} extends T ? never : T
 export type Fn<Args extends unknown[], Result> = (...args: Args) => Result
 export type Maybe<T> = 'nothing' | { just: T }
 export type Intersect<T> = (T extends any ? Fn<[T], void> : never) extends Fn<
   [infer I],
   void
 >
-  ? I
+  ? [unknown] extends [I]
+    ? never
+    : I
   : never
 export type ValueOf<T> = T[keyof T]
 export type ValueType<T> = [T] extends [(infer U)[]]
@@ -65,7 +71,6 @@ export type ValueType<T> = [T] extends [(infer U)[]]
   : [T] extends [{ [_ in any]: infer U }]
   ? U
   : never
-type NotUnknown<T> = [unknown] extends [T] ? never : T
 export type Diff<T, U> = IfEq<keyof T, keyof U, {}, Omit<T, keyof U>>
 export type Common<T, U> = Pick<T, Extract<keyof T, keyof U>>
 type IfEq<T, U, A, B> = [T] extends [U] ? ([U] extends [T] ? A : B) : B
