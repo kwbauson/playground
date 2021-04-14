@@ -14,10 +14,10 @@ export declare class Optic<S, A> {
   omit<KS extends (keyof A)[]>(keys: KS): Optic<S, Omit<A, KS[number]>>
 
   map<B>(optical: Optical<ValueType<A>, B>): Optic<S, B>
+  at<K extends keyof A>(key: K): Optic<S, Maybe<A[K]>>
 
-  at<K extends keyof Record<A>>(key: K): Optic<S, Maybe<Record<A>[K]>>
-
-  choices: { [K in keyof Choice<S>]: Optic<Choice<S>[K], A> }
+  build: { [K in keyof Choice<S>]: Optic<Choice<S>[K], A> }
+  choice: { [K in keyof Choice<A>]: Optic<S, Maybe<Choice<A>[K]>> }
 }
 
 export type Optical<S, A> =
@@ -74,6 +74,7 @@ export type VNode =
   | { Div: VNode[] }
   | { Text: string }
   | { Input: string }
+  | { NumberInput: number }
   | { Button: { label: string; clicked: boolean } }
   | 'Break'
   | 'Divider'
@@ -82,7 +83,8 @@ export const {
   Div,
   Text,
   Input,
+  NumberInput,
   Button,
   Break,
   Divider,
-} = optic<VNode>().choices
+} = optic<VNode>().build
