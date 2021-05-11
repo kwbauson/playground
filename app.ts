@@ -84,6 +84,10 @@ export type VNode =
   | 'Break'
   | 'Divider'
 
+export function optic<S>(): Optic<S, S> {
+  return { build: {} } as any
+}
+
 export const {
   Div,
   Text,
