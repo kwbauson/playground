@@ -24,8 +24,6 @@ export type Optical<S, A> =
   | ((attrs: { [K in keyof S]: Optic<S, S[K]> }) => Optical<S, A>)
   | NotEmpty<{ [K in keyof A]: Optical<S, A[K]> }>
 
-export declare function optic<S>(): Optic<S, S>
-
 export type Record<T> = keyof T extends never
   ? never
   : Exclude<Extract<T, object>, Function>
