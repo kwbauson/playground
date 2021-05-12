@@ -1,6 +1,4 @@
 export declare class Optic<S, A> {
-  static identity: Optic<unknown, unknown>
-
   get: Fn<[S], A>
   put: Fn<[S, A], S>
 
@@ -23,9 +21,8 @@ export declare class Optic<S, A> {
 export type Optical<S, A> =
   | Optic<S, A>
   | Exclude<A, object | Function | Optic<any, any>>
-  | ((attrs: { [K in keyof A]: Optic<S, A[K]> }) => Optical<S, A>)
-  | { [K in keyof Record<A>]: Optical<S, Record<A>[K]> }
-  | NotEmpty<{ [K in keyof Choice<S>]: Optical<Choice<S>[K], A> }>
+  | ((attrs: { [K in keyof S]: Optic<S, S[K]> }) => Optical<S, A>)
+  | NotEmpty<{ [K in keyof A]: Optical<S, A[K]> }>
 
 export declare function optic<S>(): Optic<S, S>
 
@@ -54,7 +51,7 @@ type ChoiceType<T> = string extends T
   ? 'false'
   : never
 
-export type NotEmpty<T> = {} extends T ? never : T
+export type NotEmpty<T> = T extends any ? ({} extends T ? never : T) : never
 export type Fn<Args extends unknown[], Result> = (...args: Args) => Result
 export type Maybe<T> = 'nothing' | { just: T }
 export type Intersect<T> = (T extends any ? Fn<[T], void> : never) extends Fn<
