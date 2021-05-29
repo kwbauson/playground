@@ -1,11 +1,11 @@
 export declare class Optic<S, A> {
   get: Fn<[S], A>
-  put: Fn<[S, A], S>
+  put: Fn<[A, S], S>
 
-  to<B>(get: Fn<[A], B>, put: Fn<[A, B], A>): Optic<S, B>
+  to<B>(get: Fn<[A], B>, put: Fn<[B, A], A>): Optic<S, B>
   to<B>(optical: Optical<A, B>): Optic<S, B>
 
-  of<T>(get: Fn<[T], S>, put: Fn<[T, S], T>): Optic<T, A>
+  of<T>(get: Fn<[T], S>, put: Fn<[S, T], T>): Optic<T, A>
   of<T>(optical: Optical<T, S>): Optic<T, A>
 
   pick<KS extends (keyof A)[]>(keys: KS): Optic<S, Pick<A, KS[number]>>
