@@ -11,11 +11,21 @@ export declare class Optic<S, A> {
   pick<KS extends (keyof A)[]>(keys: KS): Optic<S, Pick<A, KS[number]>>
   omit<KS extends (keyof A)[]>(keys: KS): Optic<S, Omit<A, KS[number]>>
 
-  map<B>(optical: Optical<ValueType<A>, B>): Optic<S, B>
-  at<K extends keyof A>(key: K): Optic<S, Maybe<A[K]>>
+  map<B>(
+    fn: Fn<
+      [{ [K in keyof ValueType<A>]: Optic<S, ValueType<A>[K]> }],
+      Optic<S, B>
+    >,
+  ): Optic<S, B[]>
+  at: A extends any[]
+    ? (index: number) => Optic<S, Maybe<A[number]>>
+    : { [K in keyof A]: Optic<S, A[K]> }
 
   build: { [K in keyof Choice<S>]: Optic<Choice<S>[K], A> }
   choice: { [K in keyof Choice<A>]: Optic<S, Maybe<Choice<A>[K]>> }
+
+  view<B>(f: Fn<[A], B>): Optic<S, B>
+  infer<T>(): S extends undefined ? Optic<T, A> : Optic<T, never>
 }
 
 export type Optical<S, A> =
@@ -71,10 +81,12 @@ export type Common<T, U> = Pick<T, Extract<keyof T, keyof U>>
 type IfEq<T, U, A, B> = [T] extends [U] ? ([U] extends [T] ? A : B) : B
 
 export type VNode =
-  | { Div: VNode[] }
+  | { Stack: VNode[] }
+  | { Row: VNode[] }
   | { Text: string }
   | { Input: string }
   | { NumberInput: number }
+  | { Checkbox: { label: string; checked: boolean } }
   | { Button: { label: string; clicked: boolean } }
   | 'Break'
   | 'Divider'
@@ -83,12 +95,57 @@ export function optic<S>(): Optic<S, S> {
   return { build: {} } as any
 }
 
+export function on<S>(f: Fn<[S], S>): Optic<S, boolean> {
+  return optic<S>().to<boolean>(
+    () => false,
+    (b, s) => (b ? f(s) : s),
+  )
+}
+
 export const {
-  Div,
+  Stack,
+  Row,
   Text,
   Input,
   NumberInput,
+  Checkbox,
   Button,
   Break,
   Divider,
 } = optic<VNode>().build
+
+type App = {
+  editing: { todo: Todo; index: number }
+  todos: Todo[]
+}
+
+type Todo = {
+  text: string
+  done: boolean
+}
+
+export const app = optic<App>().to(({ editing, todos }) =>
+  Stack.of([
+    Row.of([
+      Input.of(editing.at.todo.at.text),
+      Button.of({
+        label: 'Add Todo',
+        clicked: on(app => ({
+          ...app,
+          editing: { todo: { text: '', done: false }, index: 0 },
+          todos: [...app.todos, app.editing.todo],
+        })),
+      }),
+    ]),
+    Divider.infer(),
+    Stack.of(
+      todos.map(({ text, done }) =>
+        Row.of([
+          Checkbox.of({ label: text, checked: done }),
+          Button.of({ label: 'Remove', clicked: false }),
+        ]),
+      ),
+    ),
+    Text.of(todos.view(x => `${x.length} left`)),
+  ]),
+)
