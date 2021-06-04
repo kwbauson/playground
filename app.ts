@@ -151,7 +151,8 @@ export const AppView = App.default({
     Stack.of(
       todos.map(({ text, done }) =>
         Row.of([
-          Checkbox.of({ label: text, checked: done }),
+          Input.of(text),
+          Checkbox.of({ label: 'Done', checked: done }),
           Button.of({ label: 'Remove', clicked: false }),
         ]),
       ),
