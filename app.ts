@@ -8,8 +8,8 @@ export declare class Optic<S, A> {
   of<T>(get: Fn<[T], S>, put: Fn<[S, T], T>): Optic<T, A>
   of<T>(optical: Optical<T, S>): Optic<T, A>
 
-  pick<KS extends (keyof A)[]>(keys: KS): Optic<S, Pick<A, KS[number]>>
-  omit<KS extends (keyof A)[]>(keys: KS): Optic<S, Omit<A, KS[number]>>
+  pick<KS extends (keyof A)[]>(...keys: KS): Optic<S, Pick<A, KS[number]>>
+  omit<KS extends (keyof A)[]>(...keys: KS): Optic<S, Omit<A, KS[number]>>
 
   map<B>(
     fn: Fn<
@@ -26,6 +26,10 @@ export declare class Optic<S, A> {
 
   view<B>(f: Fn<[A], B>): Optic<S, B>
   infer<T>(): S extends undefined ? Optic<T, A> : Optic<T, never>
+  default(data: S): Optic<Partial<S> | undefined, A>
+
+  set(data: A): Optic<S, boolean>
+  update(fn: Fn<[A], A>): Optic<S, boolean>
 }
 
 export type Optical<S, A> =
@@ -95,7 +99,7 @@ export function optic<S>(): Optic<S, S> {
   return { build: {} } as any
 }
 
-export function on<S>(f: Fn<[S], S>): Optic<S, boolean> {
+export function on<S>(f: (x: S) => S): Optic<S, boolean> {
   return optic<S>().to<boolean>(
     () => false,
     (b, s) => (b ? f(s) : s),
@@ -115,8 +119,9 @@ export const {
 } = optic<VNode>().build
 
 type App = {
-  editing: { todo: Todo; index: number }
+  newText: string
   todos: Todo[]
+  filter: 'all' | 'active' | 'completed'
 }
 
 type Todo = {
@@ -124,16 +129,21 @@ type Todo = {
   done: boolean
 }
 
-export const app = optic<App>().to(({ editing, todos }) =>
+const App = optic<App>()
+
+export const AppView = App.default({
+  newText: '',
+  todos: [],
+  filter: 'all',
+}).to(({ newText, todos, filter }) =>
   Stack.of([
     Row.of([
-      Input.of(editing.at.todo.at.text),
+      Input.of(newText),
       Button.of({
         label: 'Add Todo',
-        clicked: on(app => ({
-          ...app,
-          editing: { todo: { text: '', done: false }, index: 0 },
-          todos: [...app.todos, app.editing.todo],
+        clicked: App.pick('newText', 'todos').update(({ newText, todos }) => ({
+          newText: '',
+          todos: [...todos, { text: newText, done: false }],
         })),
       }),
     ]),
@@ -147,5 +157,11 @@ export const app = optic<App>().to(({ editing, todos }) =>
       ),
     ),
     Text.of(todos.view(x => `${x.length} left`)),
+    Divider.infer(),
+    Row.of([
+      Button.of({ label: 'All', clicked: filter.set('all') }),
+      Button.of({ label: 'Active', clicked: filter.set('active') }),
+      Button.of({ label: 'Completed', clicked: filter.set('completed') }),
+    ]),
   ]),
 )
