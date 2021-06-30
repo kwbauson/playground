@@ -8,15 +8,16 @@ export declare class Optic<S, A> {
   of<T>(get: Fn<[T], S>, put: Fn<[S, T], T>): Optic<T, A>
   of<T>(optical: Optical<T, S>): Optic<T, A>
 
+  match<B>(
+    matches: { [K in keyof Choice<S>]: Optical<Choice<S>[K], B> },
+  ): Optic<S, B>
+
   pick<KS extends (keyof A)[]>(...keys: KS): Optic<S, Pick<A, KS[number]>>
+
   omit<KS extends (keyof A)[]>(...keys: KS): Optic<S, Omit<A, KS[number]>>
 
-  map<B>(
-    fn: Fn<
-      [{ [K in keyof ValueType<A>]: Optic<S, ValueType<A>[K]> }],
-      Optic<S, B>
-    >,
-  ): Optic<S, B[]>
+  map<B>(optical: Optical<ValueType<A>, B>): Optical<S, B[]>
+  mapMaybe<B>(optical: Optical<Maybe<ValueType<A>>, B>): Optical<S, B[]>
   at: A extends any[]
     ? (index: number) => Optic<S, Maybe<A[number]>>
     : { [K in keyof A]: Optic<S, A[K]> }
@@ -51,17 +52,11 @@ type Single<T> = ChoiceType<T> extends never
   : { [K in ChoiceType<T>]: undefined }
 type ChoiceType<T> = string extends T
   ? never
-  : number extends T
-  ? never
-  : symbol extends T
-  ? never
-  : T extends keyof any
-  ? T
   : T extends true
   ? 'true'
   : T extends false
   ? 'false'
-  : never
+  : Extract<T, number | symbol | keyof any>
 
 export type NotEmpty<T> = T extends any ? ({} extends T ? never : T) : never
 export type Fn<Args extends unknown[], Result> = (...args: Args) => Result
@@ -94,6 +89,7 @@ export type VNode =
   | { Button: { label: string; clicked: boolean } }
   | 'Break'
   | 'Divider'
+  | 'Empty'
 
 export function optic<S>(): Optic<S, S> {
   return { build: {} } as any
@@ -116,6 +112,7 @@ export const {
   Button,
   Break,
   Divider,
+  Empty,
 } = optic<VNode>().build
 
 type App = {
@@ -130,6 +127,16 @@ type Todo = {
 }
 
 const App = optic<App>()
+
+export const maybeTodo = optic<Maybe<Todo>>().match({
+  nothing: Empty.infer(),
+  just: ({ text, done }) =>
+    Row.of([
+      Input.of(text),
+      Checkbox.of({ label: 'Done', checked: done }),
+      Button.of({ label: 'Remove', clicked: false }),
+    ]),
+})
 
 export const AppView = App.default({
   newText: '',
@@ -148,15 +155,7 @@ export const AppView = App.default({
       }),
     ]),
     Divider.infer(),
-    Stack.of(
-      todos.map(({ text, done }) =>
-        Row.of([
-          Input.of(text),
-          Checkbox.of({ label: 'Done', checked: done }),
-          Button.of({ label: 'Remove', clicked: false }),
-        ]),
-      ),
-    ),
+    Stack.of(todos.mapMaybe(maybeTodo)),
     Text.of(todos.view(x => `${x.length} left`)),
     Divider.infer(),
     Row.of([
