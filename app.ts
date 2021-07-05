@@ -1,43 +1,77 @@
-export declare class Optic<S, A> {
-  get: Fn<[S], A>
-  put: Fn<[A, S], S>
+export class Optic<S, A> {
+  constructor(public get: Fn<[S], A>, public put: Fn<[A, S], S>) {}
 
   to<B>(get: Fn<[A], B>, put: Fn<[B, A], A>): Optic<S, B>
   to<B>(optical: Optical<A, B>): Optic<S, B>
+  to<B>(...args: [Fn<[A], B>, Fn<[B, A], A>] | [Optical<A, B>]): Optic<S, B> {
+    const other = args.length === 1 ? optic(...args) : optic(...args)
+    return optic(
+      x => other.get(this.get(x)),
+      (x, y) => this.put(other.put(x, this.get(y)), y),
+    )
+  }
 
   of<T>(get: Fn<[T], S>, put: Fn<[S, T], T>): Optic<T, A>
   of<T>(optical: Optical<T, S>): Optic<T, A>
+  of<T>(...args: [Fn<[T], S>, Fn<[S, T], T>] | [Optical<T, S>]): Optic<T, A> {
+    const other = args.length === 1 ? optic(...args) : optic(...args)
+    return other.to(this)
+  }
 
   match<B>(
     matches: { [K in keyof Choice<S>]: Optical<Choice<S>[K], B> },
-  ): Optic<S, B>
+  ): Optic<S, B> {
+    return {} as any
+  }
 
-  pick<KS extends (keyof A)[]>(...keys: KS): Optic<S, Pick<A, KS[number]>>
+  pick<KS extends (keyof A)[]>(...keys: KS): Optic<S, Pick<A, KS[number]>> {
+    return {} as any
+  }
 
-  omit<KS extends (keyof A)[]>(...keys: KS): Optic<S, Omit<A, KS[number]>>
+  omit<KS extends (keyof A)[]>(...keys: KS): Optic<S, Omit<A, KS[number]>> {
+    return {} as any
+  }
 
-  map<B>(optical: Optical<ValueType<A>, B>): Optical<S, B[]>
-  mapMaybe<B>(optical: Optical<Maybe<ValueType<A>>, B>): Optical<S, B[]>
-  at: A extends any[]
-    ? (index: number) => Optic<S, Maybe<A[number]>>
-    : { [K in keyof A]: Optic<S, A[K]> }
+  map<B>(optical: Optical<ValueType<A>, B>): Optical<S, B[]> {
+    return {} as any
+  }
+  at: { [K in keyof A]: Optic<S, A[K]> } = {} as any
 
-  build: { [K in keyof Choice<S>]: Optic<Choice<S>[K], A> }
-  choice: { [K in keyof Choice<A>]: Optic<S, Maybe<Choice<A>[K]>> }
+  enum: { [K in keyof Choice<S>]: Optic<Choice<S>[K], A> } = {} as any
+  choice: { [K in keyof Choice<A>]: Optic<S, Maybe<Choice<A>[K]>> } = {} as any
 
-  view<B>(f: Fn<[A], B>): Optic<S, B>
-  infer<T>(): S extends undefined ? Optic<T, A> : Optic<T, never>
-  default(data: S): Optic<Partial<S> | undefined, A>
+  view<B>(f: Fn<[A], B>): Optic<S, B> {
+    return this.to(
+      x => f(x),
+      (_, x) => x,
+    )
+  }
+  infer<T>(): S extends undefined ? Optic<T, A> : Optic<T, never> {
+    return this as any
+  }
+  default(data: S): Optic<Partial<S> | undefined, A> {
+    return this.of(
+      x => ({ ...data, ...x }),
+      (x, y) => ({ ...y, ...x }),
+    )
+  }
 
-  set(data: A): Optic<S, boolean>
-  update(fn: Fn<[A], A>): Optic<S, boolean>
+  set(data: A): Optic<S, boolean> {
+    return this.update(() => data)
+  }
+  update(fn: Fn<[A], A>): Optic<S, boolean> {
+    return this.to<boolean>(
+      () => false,
+      (p, x) => (p ? fn(x) : x),
+    )
+  }
 }
 
 export type Optical<S, A> =
   | Optic<S, A>
-  | Exclude<A, object | Function | Optic<any, any>>
   | ((attrs: { [K in keyof S]: Optic<S, S[K]> }) => Optical<S, A>)
-  | NotEmpty<{ [K in keyof A]: Optical<S, A[K]> }>
+  | NonEmpty<{ [K in keyof A]: Optical<S, A[K]> }>
+  | Exclude<A, object | Function | Optic<any, any>>
 
 export type Record<T> = keyof T extends never
   ? never
@@ -58,7 +92,7 @@ type ChoiceType<T> = string extends T
   ? 'false'
   : Extract<T, number | symbol | keyof any>
 
-export type NotEmpty<T> = T extends any ? ({} extends T ? never : T) : never
+export type NonEmpty<T> = T extends any ? ({} extends T ? never : T) : never
 export type Fn<Args extends unknown[], Result> = (...args: Args) => Result
 export type Maybe<T> = 'nothing' | { just: T }
 export type Intersect<T> = (T extends any ? Fn<[T], void> : never) extends Fn<
@@ -91,9 +125,39 @@ export type VNode =
   | 'Divider'
   | 'Empty'
 
-export function optic<S>(): Optic<S, S> {
-  return { build: {} } as any
+export function optic<S>(): Optic<S, S>
+export function optic<S, A>(get: Fn<[S], A>, put: Fn<[A, S], S>): Optic<S, A>
+export function optic<S, A>(optical: Optical<S, A>): Optic<S, A>
+export function optic<S, A>(
+  ...args: [] | [Fn<[S], A>, Fn<[A, S], S>] | [Optical<S, A>]
+): Optic<S, A> {
+  if (args.length === 0) {
+    return identity as Optic<S, A>
+  } else if (args.length === 2) {
+    const [get, put] = args
+    return new Optic(get, put)
+  } else {
+    const [optical] = args
+    if (optical instanceof Optic) {
+      return optical
+    } else if (optical instanceof Function) {
+      const { at } = optic<S>()
+      return optic(optical(at))
+    } else if (typeof optical === 'object' && optical !== null) {
+      return {} as any
+    } else {
+      return optic<S, A>(
+        _ => optical,
+        (_, x) => x,
+      )
+    }
+  }
 }
+
+export const identity = new Optic(
+  x => x,
+  (_, x) => x,
+)
 
 export function on<S>(f: (x: S) => S): Optic<S, boolean> {
   return optic<S>().to<boolean>(
@@ -113,7 +177,7 @@ export const {
   Break,
   Divider,
   Empty,
-} = optic<VNode>().build
+} = optic<VNode>().enum
 
 type App = {
   newText: string
@@ -127,16 +191,6 @@ type Todo = {
 }
 
 const App = optic<App>()
-
-export const maybeTodo = optic<Maybe<Todo>>().match({
-  nothing: Empty.infer(),
-  just: ({ text, done }) =>
-    Row.of([
-      Input.of(text),
-      Checkbox.of({ label: 'Done', checked: done }),
-      Button.of({ label: 'Remove', clicked: false }),
-    ]),
-})
 
 export const AppView = App.default({
   newText: '',
@@ -155,7 +209,15 @@ export const AppView = App.default({
       }),
     ]),
     Divider.infer(),
-    Stack.of(todos.mapMaybe(maybeTodo)),
+    Stack.of(
+      todos.map(({ text, done }) =>
+        Row.of([
+          Input.of(text),
+          Checkbox.of({ label: 'Done', checked: done }),
+          Button.of({ label: 'Remove', clicked: false }),
+        ]),
+      ),
+    ),
     Text.of(todos.view(x => `${x.length} left`)),
     Divider.infer(),
     Row.of([
