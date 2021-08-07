@@ -1,19 +1,19 @@
 export class Optic<S, A> {
-  constructor(public get: Fn<[S], A>, public put: Fn<[A, S], S>) {}
+  constructor(public get: Fn<[S], A>, public put: Fn<[S, A], S>) {}
 
-  to<B>(get: Fn<[A], B>, put: Fn<[B, A], A>): Optic<S, B>
+  to<B>(get: Fn<[A], B>, put: Fn<[A, B], A>): Optic<S, B>
   to<B>(optical: Optical<A, B>): Optic<S, B>
-  to<B>(...args: [Fn<[A], B>, Fn<[B, A], A>] | [Optical<A, B>]): Optic<S, B> {
+  to<B>(...args: [Fn<[A], B>, Fn<[A, B], A>] | [Optical<A, B>]): Optic<S, B> {
     const other = args.length === 1 ? optic(...args) : optic(...args)
     return optic(
       x => other.get(this.get(x)),
-      (x, y) => this.put(other.put(x, this.get(y)), y),
+      (x, y) => this.put(x, other.put(this.get(x), y)),
     )
   }
 
-  of<T>(get: Fn<[T], S>, put: Fn<[S, T], T>): Optic<T, A>
+  of<T>(get: Fn<[T], S>, put: Fn<[T, S], T>): Optic<T, A>
   of<T>(optical: Optical<T, S>): Optic<T, A>
-  of<T>(...args: [Fn<[T], S>, Fn<[S, T], T>] | [Optical<T, S>]): Optic<T, A> {
+  of<T>(...args: [Fn<[T], S>, Fn<[T, S], T>] | [Optical<T, S>]): Optic<T, A> {
     const other = args.length === 1 ? optic(...args) : optic(...args)
     return other.to(this)
   }
@@ -24,16 +24,42 @@ export class Optic<S, A> {
     return {} as any
   }
 
-  pick<KS extends (keyof A)[]>(...keys: KS): Optic<S, Pick<A, KS[number]>> {
+  matchTo<B>(
+    get: Fn<[A], B>,
+    matches: { [K in keyof Choice<B>]: Optical<A, A> },
+  ): Optic<S, B> {
     return {} as any
+  }
+
+  pick<KS extends (keyof A)[]>(...keys: KS): Optic<S, Pick<A, KS[number]>> {
+    return this.to(
+      x => {
+        const entries = Object.entries(x) as [keyof A, unknown][]
+        const filtered = entries.filter(([k, _]) => keys.includes(k))
+        return Object.fromEntries(filtered) as Pick<A, KS[number]>
+      },
+      (x, y) => ({ ...x, ...y }),
+    )
   }
 
   omit<KS extends (keyof A)[]>(...keys: KS): Optic<S, Omit<A, KS[number]>> {
-    return {} as any
+    return this.to(
+      x => {
+        const entries = Object.entries(x) as [keyof A, unknown][]
+        const filtered = entries.filter(([k, _]) => !keys.includes(k))
+        return Object.fromEntries(filtered) as Omit<A, KS[number]>
+      },
+      (x, y) => ({ ...x, ...y }),
+    )
   }
 
   map<B>(optical: Optical<ValueType<A>, B>): Optical<S, B[]> {
-    return {} as any
+    const other = optic(optical)
+    const self = this as unknown as Optic<S, ValueType<A>[]>
+    return self.to(
+      x => x.map(other.get),
+      (x, y) => x.map((xi, i) => other.put(xi, y[i]!)),
+    )
   }
   at: { [K in keyof A]: Optic<S, A[K]> } = {} as any
 
@@ -43,7 +69,7 @@ export class Optic<S, A> {
   view<B>(f: Fn<[A], B>): Optic<S, B> {
     return this.to(
       x => f(x),
-      (_, x) => x,
+      x => x,
     )
   }
   infer<T>(): S extends undefined ? Optic<T, A> : Optic<T, never> {
@@ -62,7 +88,7 @@ export class Optic<S, A> {
   update(fn: Fn<[A], A>): Optic<S, boolean> {
     return this.to<boolean>(
       () => false,
-      (p, x) => (p ? fn(x) : x),
+      (x, p) => (p ? fn(x) : x),
     )
   }
 }
@@ -126,10 +152,10 @@ export type VNode =
   | 'Empty'
 
 export function optic<S>(): Optic<S, S>
-export function optic<S, A>(get: Fn<[S], A>, put: Fn<[A, S], S>): Optic<S, A>
+export function optic<S, A>(get: Fn<[S], A>, put: Fn<[S, A], S>): Optic<S, A>
 export function optic<S, A>(optical: Optical<S, A>): Optic<S, A>
 export function optic<S, A>(
-  ...args: [] | [Fn<[S], A>, Fn<[A, S], S>] | [Optical<S, A>]
+  ...args: [] | [Fn<[S], A>, Fn<[S, A], S>] | [Optical<S, A>]
 ): Optic<S, A> {
   if (args.length === 0) {
     return identity as Optic<S, A>
@@ -148,7 +174,7 @@ export function optic<S, A>(
     } else {
       return optic<S, A>(
         _ => optical,
-        (_, x) => x,
+        x => x,
       )
     }
   }
@@ -162,7 +188,7 @@ export const identity = new Optic(
 export function on<S>(f: (x: S) => S): Optic<S, boolean> {
   return optic<S>().to<boolean>(
     () => false,
-    (b, s) => (b ? f(s) : s),
+    (s, b) => (b ? f(s) : s),
   )
 }
 
@@ -227,3 +253,11 @@ export const AppView = App.default({
     ]),
   ]),
 )
+
+type Counter = 'increment' | 'decrement'
+const Counter = optic<number>().matchTo<Counter>(() => 'increment', {
+  increment: x => x + 1,
+  decrement: x => x - 1,
+})
+
+Counter.put(123, 'increment')
