@@ -19,9 +19,21 @@ export class Optic<S, A> {
   }
 
   match<B>(
-    matches: { [K in keyof Choice<S>]: Optical<Choice<S>[K], B> },
+    matches: { [K in keyof Choice<A>]: Optical<Choice<A>[K], B> },
   ): Optic<S, B> {
-    return {} as any
+    const self = this as unknown as Optic<S, Choice<A>>
+    return self.to(
+      x => {
+        const key = Object.keys(x)[0]! as keyof Choice<A>
+        const other = optic(matches[key] as Optical<unknown, B>)
+        return other.get(x[key])
+      },
+      (x, y) => {
+        const key = Object.keys(x)[0]! as keyof Choice<A>
+        const other = optic(matches[key] as Optical<unknown, B>)
+        return { [key]: other.put(x[key], y) } as Choice<A>
+      },
+    )
   }
 
   matchTo<B>(
@@ -261,3 +273,27 @@ const Counter = optic<number>().matchTo<Counter>(() => 'increment', {
 })
 
 Counter.put(123, 'increment')
+
+type Student = {
+  name: string
+  teacher: Teacher
+}
+
+type Teacher = {
+  name: string
+  students: Student[]
+}
+
+type User = { Student: Student } | { Teacher: Teacher }
+export const UserView = optic<User>().match({
+  Student: ({ name, teacher }) =>
+    Row.of([
+      Text.of(name.view(x => `name: ${x}`)),
+      Text.of(teacher.view(x => `teacher: ${x.name}`)),
+    ]),
+  Teacher: ({ name, students }) =>
+    Row.of([
+      Text.of(name.view(x => `name: ${x}`)),
+      Text.of(students.view(x => `students: ${x.map(s => s.name)}`)),
+    ]),
+})
