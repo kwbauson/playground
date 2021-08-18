@@ -132,7 +132,7 @@ type ChoiceType<T> = string extends T
 
 export type NonEmpty<T> = T extends any ? ({} extends T ? never : T) : never
 export type Fn<Args extends unknown[], Result> = (...args: Args) => Result
-export type Maybe<T> = 'nothing' | { just: T }
+export type Maybe<T> = 'Nothing' | { Just: T }
 export type Intersect<T> = (T extends any ? Fn<[T], void> : never) extends Fn<
   [infer I],
   void
@@ -196,6 +196,17 @@ export const identity = new Optic(
   x => x,
   (_, x) => x,
 )
+
+export function catMaybes<T>(xs: Maybe<T>[]): T[] {
+  return xs.reduce<T[]>(
+    (acc, x) => (x === 'Nothing' ? acc : [...acc, x.Just]),
+    [],
+  )
+}
+
+export function mapMaybe<T, U>(fn: Fn<[T], Maybe<U>>, xs: T[]): U[] {
+  return catMaybes(xs.map(fn))
+}
 
 export function on<S>(f: (x: S) => S): Optic<S, boolean> {
   return optic<S>().to<boolean>(
@@ -264,6 +275,21 @@ export const AppView = App.default({
       Button.of({ label: 'Completed', clicked: filter.set('completed') }),
     ]),
   ]),
+)
+
+const TodosView = App.at.todos.to<VNode>(
+  x => ({
+    Row: x.map(t => ({
+      Button: { label: `Remove ${t.text}`, clicked: false },
+    })),
+  }),
+  (x, y) => {
+    const row = y as { Row: { Button: Choice<VNode>['Button'] }[] }
+    const stuff = row.Row.map<Maybe<Todo>>((n, i) =>
+      n.Button.clicked ? 'Nothing' : { Just: x[i]! },
+    )
+    return catMaybes(stuff)
+  },
 )
 
 type Counter = 'increment' | 'decrement'
